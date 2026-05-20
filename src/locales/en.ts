@@ -96,8 +96,10 @@ export default {
         apiUrl: "API URL",
         apiKey: "API Key",
         model: "Model",
-        modelsLoading: "Loading models...",
+         modelsLoading: "Loading models...",
         modelsError: "Failed to load models",
+        refreshModels: "Refresh Models",
+        refreshingModels: "Refreshing...",
         doneButton: "Done"
     },
     progress: {

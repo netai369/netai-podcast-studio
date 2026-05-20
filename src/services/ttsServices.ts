@@ -22,7 +22,9 @@ const createLogger = (conf: { debug?: { logLevel?: LogLevel } }) => ({
 });
 import { decodeBase64ToBytes, encodeBytesToBase64, generateAudioOpenAIWithBinaryStream, convertToUnifiedPcm, combineAudioBuffersOptimized, getAudioContext } from "@/utils/audio";
 
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
+import { VITE_API_KEY } from '@/config';
+
+const ai = new GoogleGenAI({ apiKey: VITE_API_KEY });
 
 const createCorsError = (url: string) => {
     return new Error(`A network error occurred, which is often due to a CORS issue. Please ensure your custom API server at "${url}" is configured to allow requests from this application's origin. Check the browser's developer console for more details.`);
@@ -186,7 +188,9 @@ export async function* generatePodcastScriptStream(d: Document[], t: string, dur
         }
     } else {
         console.log('DEBUG: Using Gemini provider');
-        const responseStream = await ai.models.generateContentStream({ model: 'gemini-2.0-flash-exp', contents: [{parts: [{text: prompt}]}], config: { temperature: 0.7 } });
+        const model = conf.llm.model || 'gemini-2.0-flash-exp';
+        console.log('DEBUG: Using Gemini model:', model);
+        const responseStream = await ai.models.generateContentStream({ model: model, contents: [{parts: [{text: prompt}]}], config: { temperature: 0.7 } });
         console.log('DEBUG: Gemini stream started');
         for await (const chunk of responseStream) {
             const text = chunk.text || '';
@@ -333,8 +337,10 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
         }
     } else {
         console.log('DEBUG: Using Gemini for metadata');
+        const model = conf.llm.model || 'gemini-2.0-flash-exp';
+        console.log('DEBUG: Using Gemini model for metadata:', model);
         const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash-exp',
+            model: model,
             contents: [{parts: [{text: prompt}]}],
             config: {
                 responseMimeType: "application/json",
@@ -363,13 +369,16 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
 };
 
 export const fetchAvailableModels = async (conf: BackendConfig): Promise<AvailableModels[]> => {
+    console.log('DEBUG: fetchAvailableModels called with:', { provider: conf.llm.provider, url: conf.llm.openAiUrl });
     const openaiCompatibleProviders = ['openai', 'cerebras', 'mistral', 'xai', 'openrouter'];
     if (!openaiCompatibleProviders.includes(conf.llm.provider) || !conf.llm.openAiUrl) {
+        console.log('DEBUG: Not fetching models - provider not compatible or no URL');
         return [];
     }
     
     // Claude doesn't have a public models endpoint
     if (conf.llm.provider === 'claude') {
+        console.log('DEBUG: Claude does not have a public models endpoint');
         return [];
     }
     

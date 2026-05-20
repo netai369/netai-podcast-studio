@@ -85,14 +85,21 @@ export default {
         downloadAudio: "Télécharger l'Audio (.wav)",
         downloadAudioMp3: "Télécharger l'Audio (.mp3)"
     },
-    settings: {
+     settings: {
         title: "Paramètres du Backend",
         closeAria: "Fermer les paramètres",
         llmTitle: "Modèle de Langage (LLM)",
         ttsTitle: "Synthèse Vocale (TTS)",
+        debugTitle: "Paramètres de Débogage",
+        logLevel: "Niveau de Journalisation",
         provider: "Fournisseur",
         apiUrl: "URL de l'API",
         apiKey: "Clé API",
+        model: "Modèle",
+        modelsLoading: "Chargement des modèles...",
+        modelsError: "Échec du chargement des modèles",
+        refreshModels: "Actualiser les modèles",
+        refreshingModels: "Actualisation...",
         doneButton: "Terminé"
     },
     progress: {

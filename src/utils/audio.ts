@@ -475,7 +475,9 @@ export async function generateAudioOpenAIWithBinaryStream(
     
     // Only add authorization header for OpenAI, not for Supertonic
     if (provider === 'openai') {
-        headers['Authorization'] = `Bearer ${import.meta.env.VITE_API_KEY}`;
+        // Import config dynamically to avoid issues with import.meta in tests
+        const { VITE_API_KEY } = await import('@/config');
+        headers['Authorization'] = `Bearer ${VITE_API_KEY}`;
     }
     
     const response = await fetch(url, {

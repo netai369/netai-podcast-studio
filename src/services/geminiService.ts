@@ -186,7 +186,9 @@ export async function* generatePodcastScriptStream(d: Document[], t: string, dur
         }
     } else {
         console.log('DEBUG: Using Gemini provider');
-        const responseStream = await ai.models.generateContentStream({ model: 'gemini-2.0-flash-exp', contents: [{parts: [{text: prompt}]}], config: { temperature: 0.7 } });
+        const model = conf.llm.model || 'gemini-2.0-flash-exp';
+        console.log('DEBUG: Using Gemini model:', model);
+        const responseStream = await ai.models.generateContentStream({ model: model, contents: [{parts: [{text: prompt}]}], config: { temperature: 0.7 } });
         console.log('DEBUG: Gemini stream started');
         for await (const chunk of responseStream) {
             const text = chunk.text || '';
@@ -304,8 +306,10 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
         }
     } else {
         console.log('DEBUG: Using Gemini for metadata');
+        const model = conf.llm.model || 'gemini-2.0-flash-exp';
+        console.log('DEBUG: Using Gemini model for metadata:', model);
         const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash-exp',
+            model: model,
             contents: [{parts: [{text: prompt}]}],
             config: {
                 responseMimeType: "application/json",
@@ -334,6 +338,24 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
 };
 
 export const fetchAvailableModels = async (conf: BackendConfig): Promise<AvailableModels[]> => {
+    // Handle Gemini provider
+    if (conf.llm.provider === 'gemini') {
+        try {
+            // Gemini uses the Google GenAI SDK, so we return the known available models
+            const geminiModels = [
+                { id: 'gemini-2.0-flash-exp', object: 'model', created: Date.now(), owned_by: 'google' },
+                { id: 'gemini-2.0-pro-exp', object: 'model', created: Date.now(), owned_by: 'google' },
+                { id: 'gemini-2.5-flash-exp', object: 'model', created: Date.now(), owned_by: 'google' },
+                { id: 'gemini-2.5-pro-exp', object: 'model', created: Date.now(), owned_by: 'google' }
+            ];
+            console.log('DEBUG: Returning Gemini models:', geminiModels.map(m => m.id));
+            return geminiModels;
+        } catch (error) {
+            console.error('DEBUG: Failed to load Gemini models:', error);
+            return [];
+        }
+    }
+    
     const openaiCompatibleProviders = ['openai', 'cerebras', 'mistral', 'xai', 'openrouter'];
     if (!openaiCompatibleProviders.includes(conf.llm.provider) || !conf.llm.openAiUrl) {
         return [];

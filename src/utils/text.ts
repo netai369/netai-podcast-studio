@@ -1,8 +1,10 @@
 const CHUNK_SIZE = 15000;
 const CHUNK_OVERLAP = 500;
 
-// Token-basierte Chunking-Konstanten für TTS
-const SAFE_MAX_CHARS = 1000; // Silero TTS unterstützt max 1000 Zeichen stabil
+// Token-basierte Chunking-Konstanten
+const MAX_TOKENS_PER_CHUNK = 4800; // Sicherheitspuffer unter 5000 Token
+const TOKEN_TO_CHAR_RATIO = 0.75; // Durchschnittliches Zeichen-zu-Token-Verhältnis
+const SAFE_MAX_CHARS = Math.floor(MAX_TOKENS_PER_CHUNK * TOKEN_TO_CHAR_RATIO);
 
 export const chunkDocument = (doc: { name: string, content: string }): Array<{ name: string, content: string }> => {
     if (doc.content.length <= CHUNK_SIZE) return [{ ...doc }];
@@ -37,13 +39,17 @@ export const chunkScriptForTTS = (script: string, maxLength: number = SAFE_MAX_C
         if (splitPos === -1) splitPos = text.lastIndexOf('\n', maxLength);
         if (splitPos === -1) splitPos = text.lastIndexOf(';', maxLength);
         if (splitPos === -1) splitPos = text.lastIndexOf(':', maxLength);
-        if (splitPos === -1) splitPos = maxLength; // Fallback: harter Schnitt
+        if (splitPos === -1) splitPos = text.lastIndexOf(',', maxLength);
+        if (splitPos === -1) splitPos = text.lastIndexOf(' ', maxLength);
 
-        // Vermeide leere Chunks
-        if (splitPos === 0) splitPos = maxLength;
+        // Wenn kein guter Trennpunkt gefunden wurde, hart an maxLength teilen
+        if (splitPos === -1 || splitPos < maxLength * 0.7) {
+            splitPos = maxLength;
+        } else {
+            splitPos += 1; // Einschließen des Trennzeichens im nächsten Chunk
+        }
 
-        const chunk = text.substring(0, splitPos).trim();
-        chunks.push(chunk);
+        chunks.push(text.substring(0, splitPos));
         text = text.substring(splitPos).trim();
     }
 

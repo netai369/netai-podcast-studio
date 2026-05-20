@@ -19,7 +19,7 @@ function createPersistentStore<T>(key: string, startValue: T) {
 
 // --- Settings Store ---
 const initialSettings: BackendConfig = {
-    llm: { provider: 'gemini', model: 'gemini-2.0-flash-exp' },
+    llm: { provider: 'gemini', model: undefined },
     tts: { provider: 'edge-tts', language: 'de' },
     debug: { logLevel: 'INFO' },
 };
