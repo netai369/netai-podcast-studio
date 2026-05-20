@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  ai-podcast-studio:
+    build:
+      context: .
+      args:
+        # This build argument is read from the .env file in the same directory
+        - VITE_GEMINI_API_KEY=${GEMINI_API_KEY}
+    container_name: ai-podcast-studio-frontend
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    networks:
+      - ai_stack_network
+
+networks:
+  ai_stack_network:
+    driver: bridge

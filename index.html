@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Podcast Studio (Svelte)</title>
+    <!-- lamejs for MP3 encoding (served locally) -->
+    <script src="/lame.all.min.js"></script>
+    <!-- Import map for local dependencies -->
+    <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "./node_modules/@google/genai/dist/index.mjs",
+    "mammoth": "./node_modules/mammoth/mammoth.browser.mjs",
+    "jszip": "./node_modules/jszip/dist/jszip.mjs",
+    "pdfjs-dist": "./node_modules/pdfjs-dist/build/pdf.mjs",
+    "lamejs": "./node_modules/lamejs/lame.min.js",
+    "vite": "./node_modules/vite/dist/vite.mjs",
+    "@sveltejs/vite-plugin-svelte": "./node_modules/@sveltejs/vite-plugin-svelte/dist/index.mjs",
+    "path": "./node_modules/path-browser-esm/index.js",
+    "svelte/": "./node_modules/svelte/",
+    "url": "./node_modules/url/index.mjs"
+  }
+}
+</script>
+  <link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./src/main.ts"></script>
+</body>
+</html>
