@@ -6,6 +6,11 @@ declare global {
   interface Window {
     importMetaEnv?: {
       VITE_API_KEY: string;
+      VITE_LLM_PROVIDER: string;
+      VITE_LLM_URL: string;
+      VITE_LLM_KEY: string;
+      VITE_TTS_PROVIDER: string;
+      VITE_TTS_URL: string;
       MODE: string;
       DEV: boolean;
       PROD: boolean;
@@ -14,21 +19,32 @@ declare global {
   }
 }
 
-// Export environment variables - these will be mocked in tests
-export const VITE_API_KEY = typeof window !== 'undefined' 
-  ? window.importMetaEnv?.VITE_API_KEY || ''
-  : process.env.VITE_API_KEY || '';
+// Helper to read environment variables consistently
+// Priority: process.env (Node/test) > window.importMetaEnv (browser)
+const getEnvVar = (key: string, fallback: string = ''): string => {
+  // In Node/test environment
+  if (typeof process !== 'undefined' && process.env && Object.keys(process.env).length > 0) {
+    return (process.env[key] || fallback);
+  }
+  // In browser environment
+  if (typeof window !== 'undefined' && window.importMetaEnv) {
+    return (window.importMetaEnv[key] || fallback);
+  }
+  return fallback;
+};
 
-export const MODE = typeof window !== 'undefined'
-  ? window.importMetaEnv?.MODE || 'development'
-  : process.env.MODE || 'development';
+// Export environment variables
+export const VITE_API_KEY = getEnvVar('VITE_API_KEY');
+export const VITE_LLM_PROVIDER = getEnvVar('VITE_LLM_PROVIDER', 'gemini');
+export const VITE_LLM_URL = getEnvVar('VITE_LLM_URL');
+export const VITE_LLM_KEY = getEnvVar('VITE_LLM_KEY');
+export const VITE_TTS_PROVIDER = getEnvVar('VITE_TTS_PROVIDER', 'gemini');
+export const VITE_TTS_URL = getEnvVar('VITE_TTS_URL');
 
-export const DEV = typeof window !== 'undefined'
-  ? window.importMetaEnv?.DEV !== false
-  : process.env.NODE_ENV !== 'production';
+export const MODE = getEnvVar('NODE_ENV', '') === 'production' || getEnvVar('MODE', '') === 'production' ? 'production' : 'development';
 
-export const PROD = typeof window !== 'undefined'
-  ? window.importMetaEnv?.PROD !== false
-  : process.env.NODE_ENV === 'production';
+export const DEV = MODE === 'development';
+
+export const PROD = MODE === 'production';
 
 export const SSR = false;
