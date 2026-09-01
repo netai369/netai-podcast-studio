@@ -2,7 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { settingsStore, i18n } from '@/stores';
   import Icon from '@/components/Icons.svelte';
-  import { fetchAvailableModels } from '@/services/ttsServices';
+  import { fetchAvailableModels } from '@/services/api';
   import type { AvailableModels } from '@/types';
 
   const dispatch = createEventDispatcher();

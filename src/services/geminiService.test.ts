@@ -160,7 +160,7 @@ describe('geminiService', () => {
       
       await expect(
         generateVoicePreviewAudio('Puck', config)
-      ).rejects.toThrow('Voice previews are only supported for Gemini, OpenAI and Edge TTS providers.');
+      ).rejects.toThrow('Voice previews are only supported for Gemini, OpenAI, Supertonic and Edge TTS providers.');
     });
   });
   

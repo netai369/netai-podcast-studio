@@ -20,13 +20,16 @@
   let editingPodcast: Podcast | null = null;
   let isSettingsOpen = false;
   let authView: AuthView = 'login';
+  let podcastsLoaded = false;
 
   onMount(() => {
-    // This reactive statement automatically saves podcasts when they change
-    userStore.subscribe(user => {
+    // Load podcasts for the current user when they log in/change
+    return userStore.subscribe(user => {
+      podcastsLoaded = false;
       if (user) {
         const saved = localStorage.getItem(`podcasts_${user.email}`);
         podcasts = saved ? JSON.parse(saved).map((p: any) => ({...p, createdAt: new Date(p.createdAt)})) : [];
+        podcastsLoaded = true;
       } else {
         podcasts = [];
         documents = [];
@@ -34,7 +37,9 @@
     });
   });
 
-  $: if ($userStore) {
+  // Persist podcasts only after they have been loaded for the current user
+  // to avoid overwriting stored data with a stale/empty array during auth changes.
+  $: if ($userStore && podcastsLoaded) {
     localStorage.setItem(`podcasts_${$userStore.email}`, JSON.stringify(podcasts));
   }
   

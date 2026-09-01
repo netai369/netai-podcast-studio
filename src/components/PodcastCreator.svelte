@@ -85,8 +85,10 @@
     }
   });
 
-  // Save settings when they change
-  $: if (duration && style && narrationStyle && language) {
+  // Save settings when they change.
+  // Skip while editing an existing podcast so the podcast's own values don't
+  // overwrite the user's last-used configuration.
+  $: if (duration && style && narrationStyle && language && state !== 'editing' && !isEditingExistingPodcast) {
     lastSettingsStore.set({ duration, style, narrationStyle, language });
   }
   

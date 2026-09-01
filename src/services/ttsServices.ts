@@ -7,19 +7,29 @@ import { getVoicePreviewText, VOICES_BY_LANGUAGE, CUSTOM_VOICE_ID, getLanguageNa
 import type { LogLevel } from "@/types";
 
 // Logger utility
-const createLogger = (conf: { debug?: { logLevel?: LogLevel } }) => ({
-    error: (message: string, ...args: any[]) => console.error(`ERROR: ${message}`, ...args),
-    info: (message: string, ...args: any[]) => {
-        if (['INFO', 'DEBUG'].includes(conf.debug?.logLevel || 'INFO')) {
-            console.log(`INFO: ${message}`, ...args);
+const createLogger = (conf: { debug?: { logLevel?: LogLevel } }) => {
+    debugLogEnabled = conf.debug?.logLevel === 'DEBUG';
+    return {
+        error: (message: string, ...args: any[]) => console.error(`ERROR: ${message}`, ...args),
+        info: (message: string, ...args: any[]) => {
+            if (['INFO', 'DEBUG'].includes(conf.debug?.logLevel || 'INFO')) {
+                console.log(`INFO: ${message}`, ...args);
+            }
+        },
+        debug: (message: string, ...args: any[]) => {
+            if (conf.debug?.logLevel === 'DEBUG') {
+                console.log(`DEBUG: ${message}`, ...args);
+            }
         }
-    },
-    debug: (message: string, ...args: any[]) => {
-        if (conf.debug?.logLevel === 'DEBUG') {
-            console.log(`DEBUG: ${message}`, ...args);
-        }
-    }
-});
+    };
+};
+
+// Module-level debug logger: enabled lazily from the most recent config so that
+// debug output only appears when the configured log level is DEBUG.
+let debugLogEnabled = false;
+const logDebug = (message: string, ...args: any[]) => {
+    if (debugLogEnabled) console.log(`DEBUG: ${message}`, ...args);
+};
 import { decodeBase64ToBytes, encodeBytesToBase64, generateAudioOpenAIWithBinaryStream, convertToUnifiedPcm, combineAudioBuffersOptimized, getAudioContext } from "@/utils/audio";
 
 import { VITE_API_KEY } from '@/config';
@@ -33,8 +43,8 @@ const createCorsError = (url: string) => {
 const getScriptGenerationPrompt = (docs: { name: string, content: string }[], topic: string, duration: number, style: PodcastStyle, speakers: SpeakerConfig[], lang: string, narration: PodcastNarrationStyle): string => {
     const docContents = docs.map(d => `Document: ${d.name}\nContent:\n${d.content}`).join('\n\n---\n\n');
     const speakerInfo = style === 'solo'
-        ? `The podcast is a solo host format, with the host named ${speakers[0].name}.`
-        : `The podcast is a conversational format between two hosts: ${speakers[0].name} and ${speakers[1].name}.`;
+        ? `The podcast is a solo host format, with the host named ${speakers[0]?.name || 'the host'}.`
+        : `The podcast is a conversational format between two hosts: ${speakers[0]?.name || 'Host A'} and ${speakers[1]?.name || 'Host B'}.`;
 
     let styleSpecificInstructions = '';
     if (narration === 'professional' || narration === 'educational') {
@@ -58,7 +68,7 @@ Source Documents:\n${docContents}
 Instructions:
 1. Analyze the documents for relevant information.
 2. Create a script in ${lang} of approximately ${duration} minutes (assuming a speaking rate of 150 words per minute).
-3. Adhere strictly to the format: For a 'solo' style, write the script as a continuous monologue without any speaker name prefixes. For a 'conversation' style, you MUST prefix each line with the speaker's name (e.g., "${speakers[0].name}: " or "${speakers[1].name}: ") to indicate who is speaking.
+3. Adhere strictly to the format: For a 'solo' style, write the script as a continuous monologue without any speaker name prefixes. For a 'conversation' style, you MUST prefix each line with the speaker's name (e.g., "${speakers[0]?.name || 'Host A'}: " or "${speakers[1]?.name || 'Host B'}: ") to indicate who is speaking.
 4. Infuse the script with the specified "${narration}" style.
 ${styleSpecificInstructions}
 5. Output ONLY the script content, ready for a text-to-speech engine. 
@@ -67,7 +77,29 @@ ${styleSpecificInstructions}
 Begin script:`;
 };
 
+const LANGUAGES_LIST = ['en', 'de', 'es', 'fr', 'it', 'nl', 'sv', 'ja', 'uk', 'pl', 'sl', 'hr', 'hu', 'sk', 'cs', 'ro', 'el', 'tr'];
+
+const validateConfig = (conf: BackendConfig | undefined): BackendConfig => {
+    if (!conf || !conf.llm || !conf.tts || !conf.debug) {
+        throw new Error('Backend configuration is required');
+    }
+    return conf;
+};
+
+const validateScript = (script: string): void => {
+    if (!script || script.trim() === '') {
+        throw new Error('Script cannot be empty');
+    }
+};
+
 export async function* generatePodcastScriptStream(d: Document[], t: string, dur: number, s: PodcastStyle, spk: SpeakerConfig[], l: string, n: PodcastNarrationStyle, conf: BackendConfig): AsyncGenerator<string> {
+    validateConfig(conf);
+    if (!d || d.length === 0) throw new Error('Documents array cannot be empty');
+    if (!t || t.trim() === '') throw new Error('Topic cannot be empty');
+    if (!dur || dur <= 0) throw new Error('Duration must be a positive number');
+    if (!spk || spk.length === 0) throw new Error('At least one speaker must be configured');
+    if (!l || !LANGUAGES_LIST.includes(l)) throw new Error('Invalid language code');
+    
     const logger = createLogger(conf);
     const fullLanguageName = getLanguageName(l);
     const prompt = getScriptGenerationPrompt(d.flatMap(chunkDocument), t, dur, s, spk, fullLanguageName, n);
@@ -77,7 +109,7 @@ export async function* generatePodcastScriptStream(d: Document[], t: string, dur
     const claudeCompatibleProviders = ['claude'];
     
     if ((openaiCompatibleProviders.includes(conf.llm.provider) || claudeCompatibleProviders.includes(conf.llm.provider)) && conf.llm.openAiUrl) {
-        console.log('DEBUG: Using OpenAI compatible provider:', conf.llm.provider, 'URL:', conf.llm.openAiUrl);
+        logDebug(' Using OpenAI compatible provider:', conf.llm.provider, 'URL:', conf.llm.openAiUrl);
         try {
             let requestBody;
             let chatUrl;
@@ -92,7 +124,7 @@ export async function* generatePodcastScriptStream(d: Document[], t: string, dur
                     temperature: 0
                 };
                 chatUrl = conf.llm.openAiUrl; // Claude URL already includes the endpoint
-                console.log('DEBUG: Using Claude API URL:', chatUrl);
+                logDebug(' Using Claude API URL:', chatUrl);
             } else {
                 // OpenAI-compatible format
                 requestBody = {
@@ -110,10 +142,10 @@ export async function* generatePodcastScriptStream(d: Document[], t: string, dur
                     const baseUrl = conf.llm.openAiUrl.replace(/\/$/, '');
                     chatUrl = `${baseUrl}/v1/chat/completions`;
                 }
-                console.log('DEBUG: Using OpenAI chat URL:', chatUrl);
+                logDebug(' Using OpenAI chat URL:', chatUrl);
             }
             
-            console.log('DEBUG: Request body:', requestBody);
+            logDebug(' Request body:', requestBody);
             const response = await fetch(chatUrl, {
                 method: 'POST',
                 headers: {
@@ -122,7 +154,7 @@ export async function* generatePodcastScriptStream(d: Document[], t: string, dur
                 },
                 body: JSON.stringify(requestBody)
             });
-            console.log('DEBUG: OpenAI response status:', response.status);
+            logDebug(' OpenAI response status:', response.status);
             
             if (!response.ok) {
                 let errorMessage = `API Error: ${response.status} ${response.statusText}`;
@@ -139,19 +171,19 @@ export async function* generatePodcastScriptStream(d: Document[], t: string, dur
             }
 
             if (!response.body) throw new Error("No response body from OpenAI stream.");
-            console.log('DEBUG: OpenAI response body available, starting stream processing');
+            logDebug(' OpenAI response body available, starting stream processing');
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
                 const chunk = decoder.decode(value);
-                console.log('DEBUG: Received OpenAI chunk:', chunk.substring(0, 200) + '...');
+                logDebug(' Received OpenAI chunk:', chunk.substring(0, 200) + '...');
                 const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
                 for (const line of lines) {
                     const data = line.substring(6);
                     if (data.trim() === '[DONE]') {
-                        console.log('DEBUG: OpenAI stream ended');
+                        logDebug(' OpenAI stream ended');
                         return;
                     }
                     try {
@@ -170,10 +202,10 @@ export async function* generatePodcastScriptStream(d: Document[], t: string, dur
                             yield content;
                         }
                     } catch (e) {
-                        console.log('DEBUG: Failed to parse JSON from line:', data, 'Error:', e);
+                        logDebug(' Failed to parse JSON from line:', data, 'Error:', e);
                         // Try to extract content directly if it's not valid JSON
                         if (data && typeof data === 'string' && !data.startsWith('{')) {
-                            console.log('DEBUG: Treating as raw content:', data.substring(0, 100) + '...');
+                            logDebug(' Treating as raw content:', data.substring(0, 100) + '...');
                             yield data;
                         }
                     }
@@ -187,28 +219,34 @@ export async function* generatePodcastScriptStream(d: Document[], t: string, dur
             throw e;
         }
     } else {
-        console.log('DEBUG: Using Gemini provider');
+        logDebug(' Using Gemini provider');
         const model = conf.llm.model || 'gemini-2.0-flash-exp';
-        console.log('DEBUG: Using Gemini model:', model);
-        const responseStream = await ai.models.generateContentStream({ model: model, contents: [{parts: [{text: prompt}]}], config: { temperature: 0.7 } });
-        console.log('DEBUG: Gemini stream started');
-        for await (const chunk of responseStream) {
-            const text = chunk.text || '';
-            if (text) console.log('DEBUG: Yielding Gemini content:', text.substring(0, 100) + '...');
-            yield text;
+        logDebug(' Using Gemini model:', model);
+        try {
+            const responseStream = await ai.models.generateContentStream({ model: model, contents: [{parts: [{text: prompt}]}], config: { temperature: 0.7 } });
+            logDebug(' Gemini stream started');
+            for await (const chunk of responseStream) {
+                const text = chunk.text || '';
+                if (text) logDebug(' Yielding Gemini content:', text.substring(0, 100) + '...');
+                yield text;
+            }
+            logDebug(' Gemini stream ended');
+        } catch (e) {
+            throw new Error(`Gemini script generation failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
         }
-        console.log('DEBUG: Gemini stream ended');
     }
 }
 
 export const generatePodcastMetadata = async (script: string, conf: BackendConfig, language: string = 'en'): Promise<{ title: string, description: string }> => {
+    validateConfig(conf);
+    validateScript(script);
     const prompt = `Based on this podcast script, generate a concise, catchy title and a one-paragraph description in ${language}. Return ONLY a JSON object with keys "title" and "description". Do not include any other text or formatting.\n\nScript:\n---\n${script.substring(0, 8000)}...`;
-    console.log('DEBUG: generatePodcastMetadata called with provider:', conf.llm.provider);
+    logDebug(' generatePodcastMetadata called with provider:', conf.llm.provider);
     const openaiCompatibleProviders = ['openai', 'cerebras', 'mistral', 'xai', 'openrouter'];
     const claudeCompatibleProviders = ['claude'];
     
     if ((openaiCompatibleProviders.includes(conf.llm.provider) || claudeCompatibleProviders.includes(conf.llm.provider)) && conf.llm.openAiUrl) {
-        console.log('DEBUG: Using OpenAI compatible provider for metadata:', conf.llm.provider, 'URL:', conf.llm.openAiUrl);
+        logDebug(' Using OpenAI compatible provider for metadata:', conf.llm.provider, 'URL:', conf.llm.openAiUrl);
         try {
             let requestBody;
             let metadataUrl;
@@ -222,7 +260,7 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
                     temperature: 0
                 };
                 metadataUrl = conf.llm.openAiUrl; // Claude URL already includes the endpoint
-                console.log('DEBUG: Using Claude metadata URL:', metadataUrl);
+                logDebug(' Using Claude metadata URL:', metadataUrl);
             } else {
                 // OpenAI-compatible format
                 requestBody = {
@@ -240,10 +278,10 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
                     const baseUrl = conf.llm.openAiUrl.replace(/\/$/, '');
                     metadataUrl = `${baseUrl}/v1/chat/completions`;
                 }
-                console.log('DEBUG: Using OpenAI metadata URL:', metadataUrl);
+                logDebug(' Using OpenAI metadata URL:', metadataUrl);
             }
             
-            console.log('DEBUG: Metadata request body:', requestBody);
+            logDebug(' Metadata request body:', requestBody);
             const headers: Record<string, string> = {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${conf.llm.openAiKey}`
@@ -253,9 +291,9 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
                 headers,
                 body: JSON.stringify(requestBody)
             });
-            console.log('DEBUG: OpenAI metadata response status:', response.status);
+            logDebug(' OpenAI metadata response status:', response.status);
             const data = await response.json();
-            console.log('DEBUG: OpenAI metadata response data:', data);
+            logDebug(' OpenAI metadata response data:', data);
             let content = '';
             if (data.choices && data.choices[0]) {
                 const choice = data.choices[0];
@@ -277,25 +315,25 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
                 const originalContent = content;
                 content = content.replace(/<think>[\s\S]*?<\/think>/gi, '');
                 if (content !== originalContent) {
-                    console.log('DEBUG: Removed thinking tags from metadata content');
+                    logDebug(' Removed thinking tags from metadata content');
                 }
 
-                 console.log('DEBUG: Extracted content:', content.substring(0, 200) + '...');
+                 logDebug(' Extracted content:', content.substring(0, 200) + '...');
                 try {
                     const result = JSON.parse(content);
-                    console.log('DEBUG: Parsed metadata result:', result);
+                    logDebug(' Parsed metadata result:', result);
                     return result;
                 } catch (parseError) {
-                    console.log('DEBUG: Content is not JSON, trying to extract JSON from text');
+                    logDebug(' Content is not JSON, trying to extract JSON from text');
                     // Try to extract JSON from the text
                     const jsonMatch = content.match(/\{[\s\S]*\}/);
                     if (jsonMatch) {
                         try {
                             const result = JSON.parse(jsonMatch[0]);
-                            console.log('DEBUG: Extracted and parsed JSON result:', result);
+                            logDebug(' Extracted and parsed JSON result:', result);
                             return result;
                         } catch (extractError) {
-                            console.log('DEBUG: Extracted JSON is also malformed, trying to fix common issues');
+                            logDebug(' Extracted JSON is also malformed, trying to fix common issues');
                             // Try to fix common JSON issues like trailing commas
                             let fixedJson = jsonMatch[0];
                             // Remove trailing commas
@@ -306,10 +344,10 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
                             fixedJson = fixedJson.replace(/\/\*.*?\*\//gs, '');
                             try {
                                 const result = JSON.parse(fixedJson);
-                                console.log('DEBUG: Fixed and parsed JSON result:', result);
+                                logDebug(' Fixed and parsed JSON result:', result);
                                 return result;
                             } catch (fixError) {
-                                console.log('DEBUG: Failed to fix JSON, falling back to default metadata');
+                                logDebug(' Failed to fix JSON, falling back to default metadata');
                                 // Fallback to default metadata
                                 return {
                                     title: 'Podcast',
@@ -318,7 +356,7 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
                             }
                         }
                     }
-                    console.log('DEBUG: No JSON found in content, falling back to default metadata');
+                    logDebug(' No JSON found in content, falling back to default metadata');
                     // Fallback to default metadata
                     return {
                         title: 'Podcast',
@@ -326,7 +364,7 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
                     };
                 }
             }
-            console.log('DEBUG: No valid content found in response');
+            logDebug(' No valid content found in response');
             throw new Error('Invalid response format from OpenAI API');
         } catch (e) {
             console.error('DEBUG: OpenAI metadata request failed:', e);
@@ -336,30 +374,35 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
             throw e;
         }
     } else {
-        console.log('DEBUG: Using Gemini for metadata');
+        logDebug(' Using Gemini for metadata');
         const model = conf.llm.model || 'gemini-2.0-flash-exp';
-        console.log('DEBUG: Using Gemini model for metadata:', model);
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: [{parts: [{text: prompt}]}],
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        title: { type: Type.STRING },
-                        description: { type: Type.STRING }
-                    },
-                    required: ["title", "description"]
+        logDebug(' Using Gemini model for metadata:', model);
+        let response;
+        try {
+            response = await ai.models.generateContent({
+                model: model,
+                contents: [{parts: [{text: prompt}]}],
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.OBJECT,
+                        properties: {
+                            title: { type: Type.STRING },
+                            description: { type: Type.STRING }
+                        },
+                        required: ["title", "description"]
+                    }
                 }
-            }
-        });
-        console.log('DEBUG: Gemini metadata response:', response);
+            });
+        } catch (e) {
+            throw new Error(`Gemini metadata generation failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+        }
+        logDebug(' Gemini metadata response:', response);
         try {
             const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-            console.log('DEBUG: Gemini metadata text:', text);
+            logDebug(' Gemini metadata text:', text);
             const result = JSON.parse(text);
-            console.log('DEBUG: Parsed Gemini metadata result:', result);
+            logDebug(' Parsed Gemini metadata result:', result);
             return result;
         } catch (e) {
             console.error("Failed to parse JSON metadata from Gemini", { error: e, response: response.candidates?.[0]?.content?.parts?.[0]?.text });
@@ -369,80 +412,85 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
 };
 
 export const fetchAvailableModels = async (conf: BackendConfig): Promise<AvailableModels[]> => {
-    console.log('DEBUG: fetchAvailableModels called with:', { provider: conf.llm.provider, url: conf.llm.openAiUrl });
+    validateConfig(conf);
+    logDebug(' fetchAvailableModels called with:', { provider: conf.llm.provider, url: conf.llm.openAiUrl });
+
+    // Handle Gemini provider with hardcoded known model list
+    if (conf.llm.provider === 'gemini') {
+        const geminiModels = [
+            { id: 'gemini-2.0-flash-exp', object: 'model', created: Date.now(), owned_by: 'google' },
+            { id: 'gemini-2.0-pro-exp', object: 'model', created: Date.now(), owned_by: 'google' },
+            { id: 'gemini-2.5-flash-exp', object: 'model', created: Date.now(), owned_by: 'google' },
+            { id: 'gemini-2.5-pro-exp', object: 'model', created: Date.now(), owned_by: 'google' }
+        ];
+        logDebug(' Returning Gemini models:', geminiModels.map(m => m.id));
+        return geminiModels;
+    }
+
     const openaiCompatibleProviders = ['openai', 'cerebras', 'mistral', 'xai', 'openrouter'];
     if (!openaiCompatibleProviders.includes(conf.llm.provider) || !conf.llm.openAiUrl) {
-        console.log('DEBUG: Not fetching models - provider not compatible or no URL');
+        logDebug(' Not fetching models - provider not compatible or no URL');
         return [];
     }
     
     // Claude doesn't have a public models endpoint
     if (conf.llm.provider === 'claude') {
-        console.log('DEBUG: Claude does not have a public models endpoint');
+        logDebug(' Claude does not have a public models endpoint');
         return [];
     }
     
-    try {
-        // Verschiedene mögliche Endpunkte in der Reihenfolge der Wahrscheinlichkeit
-        const possibleEndpoints = [
-            '/v1/models',           // Standard OpenAI Format & LM Studio
-            '/v1/openai/models'    // Aktuell verwendeter Format
-        ];
-        
-        let lastError: Error | null = null;
-        
-        for (const endpoint of possibleEndpoints) {
-            try {
-                // Remove /chat/completions or /v1/chat/completions from the end of the URL to get the base URL
-                let baseUrl = conf.llm.openAiUrl.replace(/\/v1\/chat\/completions\/?$/, '').replace(/\/chat\/completions\/?$/, '');
-                // Ensure no trailing slash
-                baseUrl = baseUrl.replace(/\/$/, '');
-                const modelsUrl = `${baseUrl}${endpoint}`;
-                console.log('DEBUG: Trying to fetch models from:', modelsUrl);
-                
-                const response = await fetch(modelsUrl, {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${conf.llm.openAiKey}`
-                    }
-                });
-                
-                if (response.ok) {
-                    console.log('DEBUG: Successfully fetched models from:', modelsUrl);
-                    const data = await response.json();
-                    
-                    if (data.data && Array.isArray(data.data)) {
-                        return data.data.map((model: any) => ({
-                            id: model.id,
-                            object: model.object,
-                            created: model.created,
-                            owned_by: model.owned_by
-                        }));
-                    }
-                } else {
-                    console.warn('DEBUG: Endpoint failed:', modelsUrl, response.status, response.statusText);
+    const possibleEndpoints = [
+        '/v1/models',
+        '/v1/openai/models'
+    ];
+
+    for (const endpoint of possibleEndpoints) {
+        try {
+            let baseUrl = conf.llm.openAiUrl.replace(/\/v1\/chat\/completions\/?$/, '').replace(/\/chat\/completions\/?$/, '');
+            baseUrl = baseUrl.replace(/\/$/, '');
+            const modelsUrl = `${baseUrl}${endpoint}`;
+
+            const response = await fetch(modelsUrl, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${conf.llm.openAiKey}`
                 }
-            } catch (error) {
-                console.warn('DEBUG: Endpoint error:', endpoint, error);
-                lastError = error as Error;
-                continue; // Nächsten Endpunkt versuchen
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.data && Array.isArray(data.data)) {
+                    return data.data.map((model: any) => ({
+                        id: model.id,
+                        object: model.object,
+                        created: model.created,
+                        owned_by: model.owned_by
+                    }));
+                }
+            } else if (response.status === 404) {
+                continue;
+            } else {
+                let errorMessage = `Failed to fetch models: ${response.status} ${response.statusText}`;
+                try {
+                    const errorData = await response.json();
+                    if (errorData.error?.message) {
+                        errorMessage = `Failed to fetch models: ${errorData.error.message}`;
+                    }
+                } catch (e) {
+                    // Response body was not JSON; keep the status-based message
+                }
+                throw new Error(errorMessage);
             }
+        } catch (e) {
+            if (e instanceof TypeError) {
+                throw createCorsError(conf.llm.openAiUrl);
+            }
+            throw e;
         }
-        
-        // Wenn alle Endpunkte fehlgeschlagen sind, den letzten Fehler werfen
-        if (lastError) {
-            throw lastError;
-        }
-        
-        return [];
-    } catch (e) {
-        console.error('DEBUG: Failed to fetch available models:', e);
-        if (e instanceof TypeError) {
-            throw createCorsError(conf.llm.openAiUrl);
-        }
-        throw e;
     }
+
+    return [];
 };
 
 const getEffectiveVoice = (spk: SpeakerConfig): string => {
@@ -457,48 +505,48 @@ const getEffectiveVoice = (spk: SpeakerConfig): string => {
 };
 
 const generateAudioGemini = async (text: string, style: PodcastNarrationStyle, voice: string): Promise<string> => {
-    console.log('DEBUG: generateAudioGemini called with:', { textLength: text.length, style, voice });
+    logDebug(' generateAudioGemini called with:', { textLength: text.length, style, voice });
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: `In a ${style} tone, say: ${text}` }] }],
         config: { responseModalities: [Modality.AUDIO], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } }
     });
     const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
-    console.log('DEBUG: generateAudioGemini response:', { hasAudioData: !!audioData, dataLength: audioData.length });
+    logDebug(' generateAudioGemini response:', { hasAudioData: !!audioData, dataLength: audioData.length });
     return audioData;
 };
 
 const generateAudioGeminiConversation = async (text: string, speakers: SpeakerConfig[], style: PodcastNarrationStyle): Promise<string> => {
-    console.log('DEBUG: generateAudioGeminiConversation called with:', { textLength: text.length, speakers: speakers.map(s => ({ name: s.name, voice: getEffectiveVoice(s) })), style });
+    logDebug(' generateAudioGeminiConversation called with:', { textLength: text.length, speakers: speakers.map(s => ({ name: s.name, voice: getEffectiveVoice(s) })), style });
     const speakerVoiceConfigs = speakers.slice(0, 2).map(s => ({ speaker: s.name, voiceConfig: { prebuiltVoiceConfig: { voiceName: getEffectiveVoice(s) } } }));
-    console.log('DEBUG: Speaker voice configs:', speakerVoiceConfigs);
+    logDebug(' Speaker voice configs:', speakerVoiceConfigs);
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: `In a ${style} style, TTS the following conversation: ${text}` }] }],
         config: { responseModalities: [Modality.AUDIO], speechConfig: { multiSpeakerVoiceConfig: { speakerVoiceConfigs } } }
     });
     const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
-    console.log('DEBUG: generateAudioGeminiConversation response:', { hasAudioData: !!audioData, dataLength: audioData.length });
+    logDebug(' generateAudioGeminiConversation response:', { hasAudioData: !!audioData, dataLength: audioData.length });
     return audioData;
 };
 
 const generateAudioCustom = async (url: string, text: string, speaker: string, lang?: string): Promise<string> => {
-    console.log('DEBUG: generateAudioCustom called with:', { url, textLength: text.length, speaker, lang });
+    logDebug(' generateAudioCustom called with:', { url, textLength: text.length, speaker, lang });
     try {
         const requestBody: any = { text, speaker_id: speaker, format: "pcm" };
         if (lang) {
             requestBody.language = lang;
         }
-        console.log('DEBUG: Custom TTS request body:', requestBody);
+        logDebug(' Custom TTS request body:', requestBody);
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody)
         });
-        console.log('DEBUG: Custom TTS response status:', response.status);
+        logDebug(' Custom TTS response status:', response.status);
         if (!response.ok) throw new Error(`Custom TTS API failed with status ${response.status}`);
         const data = await response.json();
-        console.log('DEBUG: Custom TTS response data:', { hasAudioBase64: !!data.audio_base64, audioLength: data.audio_base64?.length });
+        logDebug(' Custom TTS response data:', { hasAudioBase64: !!data.audio_base64, audioLength: data.audio_base64?.length });
         return data.audio_base64;
     } catch (e) {
         console.error('DEBUG: Custom TTS request failed:', e);
@@ -512,7 +560,7 @@ const generateAudioCustom = async (url: string, text: string, speaker: string, l
 
 
 export const generateAudioEdgeTTS = async (text: string, voice: string): Promise<string> => {
-    console.log('DEBUG: generateAudioEdgeTTS called with:', { textLength: text.length, voice });
+    logDebug(' generateAudioEdgeTTS called with:', { textLength: text.length, voice });
     
     try {
         // Browser-spezifische Implementierung von EdgeTTS
@@ -523,15 +571,15 @@ export const generateAudioEdgeTTS = async (text: string, voice: string): Promise
         const result = await tts.synthesize();
         const audioBlob = result.audio;
         
-        console.log('DEBUG: Audio blob type:', audioBlob.type);
-        console.log('DEBUG: Audio blob size:', audioBlob.size);
+        logDebug(' Audio blob type:', audioBlob.type);
+        logDebug(' Audio blob size:', audioBlob.size);
         
         // Konvertiere Blob zu ArrayBuffer und dann zu Base64
         const audioBuffer = await audioBlob.arrayBuffer();
         const audioBytes = new Uint8Array(audioBuffer);
         const audioB64 = encodeBytesToBase64(audioBytes);
         
-        console.log('DEBUG: Edge TTS generated audio, length:', audioB64.length);
+        logDebug(' Edge TTS generated audio, length:', audioB64.length);
         return audioB64;
     } catch (e) {
         console.error('DEBUG: Edge TTS generation failed:', e);
@@ -540,15 +588,20 @@ export const generateAudioEdgeTTS = async (text: string, voice: string): Promise
 };
 
 export const generatePodcastAudio = async (script: string, style: PodcastStyle, speakers: SpeakerConfig[], n: PodcastNarrationStyle, conf: BackendConfig, onProgress: (p: number) => void, lang?: string): Promise<string> => {
-    console.log('DEBUG: generatePodcastAudio called with:', { scriptLength: script.length, style, speakers: speakers.map(s => ({ name: s.name, voice: getEffectiveVoice(s) })), narrationStyle: n, ttsProvider: conf.tts.provider, language: lang || conf.tts.language });
+    validateScript(script);
+    if (!speakers || speakers.length === 0) throw new Error('At least one speaker must be configured');
+    if (!conf || !conf.tts) throw new Error('TTS configuration is required');
+    validateConfig(conf);
+
+    logDebug(' generatePodcastAudio called with:', { scriptLength: script.length, style, speakers: speakers.map(s => ({ name: s.name, voice: getEffectiveVoice(s) })), narrationStyle: n, ttsProvider: conf.tts.provider, language: lang || conf.tts.language });
     
     // Use speaker-based chunking for conversation style to enable proper voice alternation
     const chunks = style === 'conversation' 
         ? chunkScriptBySpeakerTurns(script)
         : chunkScriptForTTS(script);
     
-    console.log('DEBUG: Script chunked into', chunks.length, 'chunks');
-    console.log('DEBUG: Chunking method:', style === 'conversation' ? 'by speaker turns' : 'by length');
+    logDebug(' Script chunked into', chunks.length, 'chunks');
+    logDebug(' Chunking method:', style === 'conversation' ? 'by speaker turns' : 'by length');
     
     const effectiveLang = lang || conf.tts.language || 'en';
 
@@ -565,14 +618,14 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
 
     for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
-        console.log(`DEBUG: Processing chunk ${i+1}/${chunks.length}, length: ${chunk.length}`);
-        console.log(`DEBUG: Chunk ${i+1} text content start: "${chunk.substring(0, 100)}..."`);
+        logDebug(` Processing chunk ${i+1}/${chunks.length}, length: ${chunk.length}`);
+        logDebug(` Chunk ${i+1} text content start: "${chunk.substring(0, 100)}..."`);
         let audioB64 = "";
         let isCompressedFormat = false; // MP3, AAC, etc.
 
         try {
             if (conf.tts.provider === 'gemini') {
-                console.log('DEBUG: Using Gemini TTS');
+                logDebug(' Using Gemini TTS');
                 isCompressedFormat = false; // Gemini gibt PCM zurück
                 if (style === 'solo') {
                     audioB64 = await generateAudioGemini(chunk.replace(`${speakers[0].name}:`, '').trim(), n, getEffectiveVoice(speakers[0]));
@@ -580,7 +633,7 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
                     audioB64 = await generateAudioGeminiConversation(chunk, speakers, n);
                 }
              } else if (conf.tts.provider === 'openai' && conf.tts.openAudioUrl) {
-                console.log('DEBUG: Using OpenAI TTS provider with binary stream support');
+                logDebug(' Using OpenAI TTS provider with binary stream support');
                 const potentialSpeakerName = chunk.match(/^([^:]+):/)?.[1];
                 // Begrenze die Länge des potentiellen Sprechernamens, um False Positives bei langen Sätzen mit Doppelpunkt zu vermeiden
                 const isValidNameLength = potentialSpeakerName && potentialSpeakerName.length < 50;
@@ -593,19 +646,19 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
                     speaker = matchedSpeaker;
                     text = chunk.replace(/^[^:]+:\s*/, '');
                 } else {
-                    console.log('DEBUG: No known speaker found prefix, using full text');
+                    logDebug(' No known speaker found prefix, using full text');
                 }
 
                 const voice = speaker.voice || 'alloy'; // Default voice
-                console.log('DEBUG: Speaker for chunk:', { potentialSpeakerName, usedSpeaker: speaker.name, voice, textPreview: text.substring(0, 50) + '...' });
+                logDebug(' Speaker for chunk:', { potentialSpeakerName, usedSpeaker: speaker.name, voice, textPreview: text.substring(0, 50) + '...' });
                  
                  // Verwende die neue Binärstream-fähige Funktion
                  const result = await generateAudioOpenAIWithBinaryStream(conf.tts.openAudioUrl, text, voice, true, effectiveLang, 'openai', conf.tts.model);
                  audioB64 = result.data;
                  isCompressedFormat = result.format === 'mp3';
-                 console.log(`DEBUG: OpenAI chunk ${i+1} processed - format: ${result.format}, isBinary: ${result.isBinary}, dataLength: ${result.data.length}`);
+                 logDebug(` OpenAI chunk ${i+1} processed - format: ${result.format}, isBinary: ${result.isBinary}, dataLength: ${result.data.length}`);
              } else if (conf.tts.provider === 'supertonic' && conf.tts.openAudioUrl) {
-                 console.log('DEBUG: Using Supertonic TTS provider');
+                 logDebug(' Using Supertonic TTS provider');
                  isCompressedFormat = false; // Supertonic returns WAV by default
                  
                  const potentialSpeakerName = chunk.match(/^([^:]+):/)?.[1];
@@ -621,15 +674,15 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
                  }
 
                  const voice = speaker.voice || 'alloy'; // Default voice
-                 console.log('DEBUG: Speaker for chunk:', { potentialSpeakerName, usedSpeaker: speaker.name, voice, textPreview: text.substring(0, 50) + '...' });
+                 logDebug(' Speaker for chunk:', { potentialSpeakerName, usedSpeaker: speaker.name, voice, textPreview: text.substring(0, 50) + '...' });
                  
                  // Verwende die neue Binärstream-fähige Funktion für Supertonic
                  const result = await generateAudioOpenAIWithBinaryStream(conf.tts.openAudioUrl, text, voice, true, effectiveLang, 'supertonic', conf.tts.model);
                  audioB64 = result.data;
                  isCompressedFormat = result.format === 'mp3';
-                 console.log(`DEBUG: Supertonic chunk ${i+1} processed - format: ${result.format}, isBinary: ${result.isBinary}, dataLength: ${result.data.length}`);
+                 logDebug(` Supertonic chunk ${i+1} processed - format: ${result.format}, isBinary: ${result.isBinary}, dataLength: ${result.data.length}`);
              } else if (conf.tts.provider === 'openaudio-s1' && conf.tts.openAudioUrl) {
-                 console.log('DEBUG: Using custom TTS provider');
+                 logDebug(' Using custom TTS provider');
                  isCompressedFormat = false; // Custom TTS gibt PCM zurück
                  const potentialSpeakerName = chunk.match(/^([^:]+):/)?.[1];
                  const isValidNameLength = potentialSpeakerName && potentialSpeakerName.length < 50;
@@ -643,10 +696,10 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
                      text = chunk.replace(/^[^:]+:\s*/, '');
                  }
 
-                 console.log('DEBUG: Speaker for chunk:', { potentialSpeakerName, usedSpeaker: speaker.name, voice: speaker.voice, textPreview: text.substring(0, 50) + '...' });
+                 logDebug(' Speaker for chunk:', { potentialSpeakerName, usedSpeaker: speaker.name, voice: speaker.voice, textPreview: text.substring(0, 50) + '...' });
                  audioB64 = await generateAudioCustom(conf.tts.openAudioUrl, text, speaker.voice, effectiveLang);
              } else if (conf.tts.provider === 'edge-tts') {
-                 console.log('DEBUG: Using Edge TTS provider');
+                 logDebug(' Using Edge TTS provider');
                  isCompressedFormat = true; // Edge TTS returns MP3 by default
                  const potentialSpeakerName = chunk.match(/^([^:]+):/)?.[1];
                  const isValidNameLength = potentialSpeakerName && potentialSpeakerName.length < 50;
@@ -661,13 +714,13 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
                  }
 
                  const voice = speaker.voice || 'en-US-EmmaMultilingualNeural'; // Default voice
-                 console.log('DEBUG: Speaker for chunk:', { potentialSpeakerName, usedSpeaker: speaker.name, voice, textPreview: text.substring(0, 50) + '...' });
+                 logDebug(' Speaker for chunk:', { potentialSpeakerName, usedSpeaker: speaker.name, voice, textPreview: text.substring(0, 50) + '...' });
                  
                  audioB64 = await generateAudioEdgeTTS(text, voice);
              }
 
             if (audioB64) {
-                console.log(`DEBUG: Chunk ${i+1} generated audio, length: ${audioB64.length}`);
+                logDebug(` Chunk ${i+1} generated audio, length: ${audioB64.length}`);
 
                 const audioBytes = decodeBase64ToBytes(audioB64);
                 
@@ -686,13 +739,13 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
                     detectedFormat = isCompressedFormat ? 'mp3' : 'wav'; // Supertonic returns WAV by default
                 }
                 
-                console.log(`DEBUG: Chunk ${i+1} format determined as: ${detectedFormat}, length: ${audioBytes.length}`);
+                logDebug(` Chunk ${i+1} format determined as: ${detectedFormat}, length: ${audioBytes.length}`);
 
                 // KERNFIX: Konvertiere JEDEN Chunk zu unified PCM vor der Kombination
                 // Das löst das Problem mit dem direkten MP3-Zusammenfügen
                 try {
                     const pcmBuffer = await convertToUnifiedPcm(audioBytes, detectedFormat);
-                    console.log(`DEBUG: Chunk ${i+1} converted to unified PCM, sample rate: ${pcmBuffer.sampleRate}, length: ${pcmBuffer.length}`);
+                    logDebug(` Chunk ${i+1} converted to unified PCM, sample rate: ${pcmBuffer.sampleRate}, length: ${pcmBuffer.length}`);
                     audioBuffers.push(pcmBuffer);
                 } catch (conversionError) {
                     console.error(`DEBUG: Failed to convert chunk ${i+1} to PCM:`, conversionError);
@@ -713,7 +766,7 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
                         }
                         // NICHT schließen, da wir den globalen Kontext wiederverwenden
                         // ctx.close();
-                        console.log(`DEBUG: Chunk ${i+1} processed with fallback method`);
+                        logDebug(` Chunk ${i+1} processed with fallback method`);
                     } catch (fallbackError) {
                         console.error(`DEBUG: Fallback also failed for chunk ${i+1}:`, fallbackError);
                         // Continue mit anderen Chunks statt komplett abzubrechen
@@ -734,16 +787,16 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
         throw new Error("No audio data could be generated.");
     }
 
-    console.log('DEBUG: Combining', audioBuffers.length, 'unified PCM audio buffers');
+    logDebug(' Combining', audioBuffers.length, 'unified PCM audio buffers');
 
     try {
         // Verwende die neue memory-optimierte Buffer-Kombination
         const combinedBuffer = await combineAudioBuffersOptimized(audioBuffers, 24000);
-        console.log('DEBUG: Audio buffers combined successfully, total samples:', combinedBuffer.length);
+        logDebug(' Audio buffers combined successfully, total samples:', combinedBuffer.length);
 
         // Konvertiere zu WAV mit bestehender Funktion
         const wavBytes = createWavBytesFromBuffer(combinedBuffer);
-        console.log('DEBUG: Final WAV data length:', wavBytes.length);
+        logDebug(' Final WAV data length:', wavBytes.length);
         
         // Validiere die WAV-Datei
         if (wavBytes.length < 44) {
@@ -756,15 +809,15 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
             throw new Error(`Invalid WAV file: missing RIFF header (got: ${header})`);
         }
         
-        console.log('DEBUG: WAV file validation passed');
+        logDebug(' WAV file validation passed');
         
         // Erstelle eine Blob-URL mit korrektem MIME-Typ für bessere Wiedergabe-Unterstützung
         const wavBlob = new Blob([wavBytes.buffer as ArrayBuffer], { type: 'audio/wav' });
         const audioUrl = URL.createObjectURL(wavBlob);
         
-        console.log('DEBUG: Created audio URL:', audioUrl);
-        console.log('DEBUG: Blob URL protocol:', audioUrl.startsWith('blob:') ? 'blob' : 'other');
-        console.log('DEBUG: Blob size:', wavBlob.size);
+        logDebug(' Created audio URL:', audioUrl);
+        logDebug(' Blob URL protocol:', audioUrl.startsWith('blob:') ? 'blob' : 'other');
+        logDebug(' Blob size:', wavBlob.size);
         
         onProgress(100);
         return audioUrl;
@@ -830,14 +883,14 @@ function writeString(view: DataView, offset: number, str: string) {
 
 // Hilfsfunktion zur Verarbeitung von PCM Fallback
 function handlePcmFallback(audioContext: AudioContext, audioBytes: Uint8Array, chunkNumber: number, audioBuffers: AudioBuffer[]) {
-    console.log(`DEBUG: Chunk ${chunkNumber} treated as PCM raw data, audio length: ${audioBytes.length}`);
+    logDebug(` Chunk ${chunkNumber} treated as PCM raw data, audio length: ${audioBytes.length}`);
     
     // Überprüfe, ob die Länge durch 2 teilbar ist (für 16-bit PCM)
     if (audioBytes.length % 2 !== 0) {
         console.warn(`WARNING: Chunk ${chunkNumber} audio data length (${audioBytes.length}) not divisible by 2, truncating`);
         // Schneide das letzte Byte ab
         const truncatedBytes = audioBytes.slice(0, audioBytes.length - 1);
-        console.log(`DEBUG: Truncated to ${truncatedBytes.length} bytes`);
+        logDebug(` Truncated to ${truncatedBytes.length} bytes`);
         const audioBuffer = audioContext.createBuffer(1, truncatedBytes.length / 2, 24000);
         const channelData = audioBuffer.getChannelData(0);
         const pcmData = new Int16Array(truncatedBytes.buffer);
@@ -846,7 +899,7 @@ function handlePcmFallback(audioContext: AudioContext, audioBytes: Uint8Array, c
         }
         audioBuffers.push(audioBuffer);
     } else {
-        console.log(`DEBUG: Creating audio buffer with ${audioBytes.length / 2} samples`);
+        logDebug(` Creating audio buffer with ${audioBytes.length / 2} samples`);
         const audioBuffer = audioContext.createBuffer(1, audioBytes.length / 2, 24000);
         const channelData = audioBuffer.getChannelData(0);
         const pcmData = new Int16Array(audioBytes.buffer);
@@ -858,86 +911,89 @@ function handlePcmFallback(audioContext: AudioContext, audioBytes: Uint8Array, c
 }
 
 export const generateVoicePreviewAudio = async (voice: string, conf: BackendConfig, language: string = 'en'): Promise<string> => {
-    console.log('DEBUG: generateVoicePreviewAudio called with:', { voice, provider: conf.tts.provider, language });
+    logDebug(' generateVoicePreviewAudio called with:', { voice, provider: conf.tts.provider, language });
     const previewText = getVoicePreviewText(language);
     
     if (conf.tts.provider === 'gemini') {
         if (!voice) throw new Error("Voice name required.");
-        console.log('DEBUG: Generating voice preview for Gemini');
+        logDebug(' Generating voice preview for Gemini');
         const result = await generateAudioGemini(previewText, 'professional', voice);
-        console.log('DEBUG: Voice preview generated, length:', result.length);
+        logDebug(' Voice preview generated, length:', result.length);
         return result;
         } else if (conf.tts.provider === 'openai' && conf.tts.openAudioUrl) {
-            console.log('DEBUG: Generating voice preview for OpenAI');
+            logDebug(' Generating voice preview for OpenAI');
             // Use binary stream for OpenAI preview as well, pass language
             const result = await generateAudioOpenAIWithBinaryStream(conf.tts.openAudioUrl, previewText, voice, true, language, 'openai', conf.tts.model);
-            console.log('DEBUG: Voice preview generated, length:', result.data.length);
+            logDebug(' Voice preview generated, length:', result.data.length);
             return result.data;
     } else if (conf.tts.provider === 'supertonic' && conf.tts.openAudioUrl) {
-        console.log('DEBUG: Generating voice preview for Supertonic');
+        logDebug(' Generating voice preview for Supertonic');
         const result = await generateAudioOpenAIWithBinaryStream(conf.tts.openAudioUrl, previewText, voice, true, language, 'supertonic', conf.tts.model);
-        console.log('DEBUG: Voice preview generated, length:', result.data.length);
+        logDebug(' Voice preview generated, length:', result.data.length);
         return result.data;
     } else if (conf.tts.provider === 'edge-tts') {
-        console.log('DEBUG: Generating voice preview for Edge TTS');
+        logDebug(' Generating voice preview for Edge TTS');
         if (!voice) throw new Error("Voice name required.");
         const result = await generateAudioEdgeTTS(previewText, voice);
-        console.log('DEBUG: Voice preview generated, length:', result.length);
+        logDebug(' Voice preview generated, length:', result.length);
         return result;
     } else {
-        console.log('DEBUG: Voice previews not supported for provider:', conf.tts.provider);
+        logDebug(' Voice previews not supported for provider:', conf.tts.provider);
         throw new Error("Voice previews are only supported for Gemini, OpenAI, Supertonic and Edge TTS providers.");
     }
 };
 
 export const fetchAvailableVoices = async (conf: BackendConfig): Promise<{ id: string; name: string; gender: 'M' | 'F'; label: string }[]> => {
-    console.log('DEBUG: fetchAvailableVoices called with provider:', conf.tts.provider);
-    console.log('DEBUG: Full config:', conf);
+    logDebug(' fetchAvailableVoices called with provider:', conf.tts.provider);
+    logDebug(' Full config:', conf);
     
     if (conf.tts.provider === 'openai' && conf.tts.openAudioUrl) {
         try {
-            // Extract the base URL and add the voices endpoint
             const baseUrl = conf.tts.openAudioUrl.replace('/audio/speech', '');
-            let voicesUrl = `${baseUrl}/audio/voices`;
-            console.log('DEBUG: Fetching available voices from:', voicesUrl);
-            
-            let response = await fetch(voicesUrl, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
+            const endpoints = [`${baseUrl}/audio/voices`, `${baseUrl}/voices`];
+
+            for (let i = 0; i < endpoints.length; i++) {
+                let response: Response | undefined;
+                let fetchError: unknown = null;
+
+                try {
+                    response = await fetch(endpoints[i], {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        }
+                    });
+                } catch (err) {
+                    fetchError = err;
                 }
-            });
-            
-            if (!response.ok) {
-                voicesUrl = `${baseUrl}/voices`;
-                console.log('DEBUG: Trying alternative voices endpoint:', voicesUrl);
-                response = await fetch(voicesUrl, {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
+
+                if (fetchError) {
+                    if (i === 0 && !(fetchError instanceof TypeError)) {
+                        continue;
                     }
-                });
+                    throw fetchError;
+                }
+
+                if (!response) continue;
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.voices && Array.isArray(data.voices)) {
+                        return data.voices.map((voice: any) => ({
+                            id: voice.id,
+                            name: voice.name,
+                            gender: voice.gender || 'M',
+                            label: `${voice.label || voice.name}${voice.description ? ` - ${voice.description}` : ''}`
+                        }));
+                    }
+                    return [];
+                } else if (response.status === 404 && i === 0) {
+                    continue;
+                } else {
+                    throw new Error(`Failed to fetch voices: ${response.status} ${response.statusText}`);
+                }
             }
-            
-            console.log('DEBUG: Response status:', response.status);
-            console.log('DEBUG: Response headers:', response.headers);
-            
-            if (!response.ok) {
-                throw new Error(`Failed to fetch voices: ${response.status} ${response.statusText}`);
-            }
-            
-            const data = await response.json();
-            console.log('DEBUG: Available voices response:', data);
-            
-            if (data.voices && Array.isArray(data.voices)) {
-                return data.voices.map((voice: any) => ({
-                    id: voice.id,
-                    name: voice.name,
-                    gender: voice.gender || 'M',
-                    label: `${voice.label || voice.name}${voice.description ? ` - ${voice.description}` : ''}`
-                }));
-            }
-            
+
             return [];
         } catch (e) {
             console.error('DEBUG: Failed to fetch available voices:', e);
@@ -954,7 +1010,7 @@ export const fetchAvailableVoices = async (conf: BackendConfig): Promise<{ id: s
 
             // Falls die Funktion verfügbar ist, geben wir sie zurück
             if (Array.isArray(voicesList) && voicesList.length > 0) {
-                console.log('DEBUG: Successfully fetched Edge TTS voices:', voicesList.length);
+                logDebug(' Successfully fetched Edge TTS voices:', voicesList.length);
                 return voicesList.map((voice: any) => ({
                     id: voice.ShortName || voice.Name,
                     name: voice.FriendlyName || voice.Name,
@@ -987,7 +1043,7 @@ export const fetchAvailableVoices = async (conf: BackendConfig): Promise<{ id: s
         try {
             const baseUrl = conf.tts.openAudioUrl.replace('/audio/speech', '').replace(/\/$/, '');
             let voicesUrl = `${baseUrl}/v1/voices`;
-            console.log('DEBUG: Fetching Supertonic voices from:', voicesUrl);
+            logDebug(' Fetching Supertonic voices from:', voicesUrl);
 
             let response = await fetch(voicesUrl, {
                 method: 'GET',
@@ -996,21 +1052,21 @@ export const fetchAvailableVoices = async (conf: BackendConfig): Promise<{ id: s
 
             if (!response.ok) {
                 voicesUrl = `${baseUrl}/voices`;
-                console.log('DEBUG: Trying alternative Supertonic voices endpoint:', voicesUrl);
+                logDebug(' Trying alternative Supertonic voices endpoint:', voicesUrl);
                 response = await fetch(voicesUrl, {
                     method: 'GET',
                     headers: { 'Content-Type': 'application/json' }
                 });
             }
 
-            console.log('DEBUG: Supertonic voices response status:', response.status);
+            logDebug(' Supertonic voices response status:', response.status);
 
             if (!response.ok) {
                 throw new Error(`Failed to fetch voices: ${response.status} ${response.statusText}`);
             }
 
             const data = await response.json();
-            console.log('DEBUG: Supertonic voices response:', data);
+            logDebug(' Supertonic voices response:', data);
 
             if (data.voices && Array.isArray(data.voices)) {
                 return data.voices.map((voice: any) => ({
@@ -1030,14 +1086,14 @@ export const fetchAvailableVoices = async (conf: BackendConfig): Promise<{ id: s
             throw e;
         }
     } else {
-        console.log('DEBUG: Voice fetching not supported for provider:', conf.tts.provider);
+        logDebug(' Voice fetching not supported for provider:', conf.tts.provider);
         // Return empty array to let the frontend handle fallbacks based on language
         return [];
     }
 }
 
 export const mixVoices = async (conf: BackendConfig, voiceA: string, voiceB: string, weight: number, name?: string): Promise<string> => {
-    console.log('DEBUG: mixVoices called with:', { provider: conf.tts.provider, voiceA, voiceB, weight, name });
+    logDebug(' mixVoices called with:', { provider: conf.tts.provider, voiceA, voiceB, weight, name });
 
     if (conf.tts.provider !== 'supertonic' || !conf.tts.openAudioUrl) {
         throw new Error("Voice mixing is only supported for Supertonic provider.");
@@ -1046,7 +1102,7 @@ export const mixVoices = async (conf: BackendConfig, voiceA: string, voiceB: str
     try {
         const baseUrl = conf.tts.openAudioUrl.replace('/audio/speech', '').replace(/\/$/, '');
         const mixUrl = `${baseUrl}/v1/voices/mix`;
-        console.log('DEBUG: Calling voice mix endpoint:', mixUrl);
+        logDebug(' Calling voice mix endpoint:', mixUrl);
 
         const response = await fetch(mixUrl, {
             method: 'POST',
@@ -1054,14 +1110,14 @@ export const mixVoices = async (conf: BackendConfig, voiceA: string, voiceB: str
             body: JSON.stringify({ voice_a: voiceA, voice_b: voiceB, weight, name })
         });
 
-        console.log('DEBUG: Voice mix response status:', response.status);
+        logDebug(' Voice mix response status:', response.status);
 
         if (!response.ok) {
             throw new Error(`Failed to mix voices: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        console.log('DEBUG: Voice mix response:', data);
+        logDebug(' Voice mix response:', data);
 
         return data.voice_id || data.id || `${voiceA}-${voiceB}`;
     } catch (e) {

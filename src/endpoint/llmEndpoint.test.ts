@@ -97,6 +97,11 @@ describe('LLM Endpoint Tests', () => {
         status: 404,
         statusText: 'Not Found'
       });
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found'
+      });
       
       const config: BackendConfig = {
         llm: {

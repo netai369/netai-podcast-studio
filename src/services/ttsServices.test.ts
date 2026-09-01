@@ -21,7 +21,14 @@ jest.mock('@google/genai', () => ({
         }]
       })
     }
-  }))
+  })),
+  Modality: {
+    AUDIO: 'AUDIO'
+  },
+  Type: {
+    OBJECT: 'OBJECT',
+    STRING: 'STRING'
+  }
 }));
 
 global.fetch = jest.fn();
@@ -123,9 +130,10 @@ describe('ttsServices', () => {
       ).rejects.toThrow('Backend configuration is required');
     });
     
-    it('should return empty array for non-OpenAI providers', async () => {
+    it('should return Gemini models for Gemini provider', async () => {
       const result = await fetchAvailableModels(baseConfig);
-      expect(result).toEqual([]);
+      expect(result.length).toBeGreaterThan(0);
+      expect(result[0].id).toContain('gemini');
     });
   });
   

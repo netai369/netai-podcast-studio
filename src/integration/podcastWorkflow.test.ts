@@ -1,28 +1,47 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
-import { generatePodcastScriptStream, generatePodcastMetadata, generatePodcastAudio } from '@/services/ttsServices';
+import * as ttsServices from '@/services/ttsServices';
 import type { BackendConfig, Document, SpeakerConfig } from '@/types';
 import { getDefaultBackendConfig, validateBackendConfig } from '@/utils/config';
+
+const { generatePodcastScriptStream, generatePodcastMetadata, generatePodcastAudio } = ttsServices;
+
+// Configurable mock state for the Google GenAI module
+const mockGenAiState = {
+  streamError: null as Error | null,
+  metadataError: null as Error | null
+};
 
 // Mock the Google GenAI and fetch
 jest.mock('@google/genai', () => ({
   GoogleGenAI: jest.fn().mockImplementation(() => ({
     models: {
       generateContentStream: jest.fn().mockImplementation(function* () {
+        if (mockGenAiState.streamError) throw mockGenAiState.streamError;
         yield { text: 'This is a test script. ' };
         yield { text: 'It demonstrates the podcast workflow. ' };
         yield { text: 'The script should be generated successfully.' };
       }),
-      generateContent: jest.fn().mockResolvedValue({
-        candidates: [{
-          content: {
-            parts: [{
-              text: '{"title": "Test Integration Podcast", "description": "A test podcast created through integration testing"}'
-            }]
-          }
-        }]
+      generateContent: jest.fn().mockImplementation(async () => {
+        if (mockGenAiState.metadataError) throw mockGenAiState.metadataError;
+        return {
+          candidates: [{
+            content: {
+              parts: [{
+                text: '{"title": "Test Integration Podcast", "description": "A test podcast created through integration testing"}'
+              }]
+            }
+          }]
+        };
       })
     }
-  }))
+  })),
+  Modality: {
+    AUDIO: 'AUDIO'
+  },
+  Type: {
+    OBJECT: 'OBJECT',
+    STRING: 'STRING'
+  }
 }));
 
 global.fetch = jest.fn();
@@ -41,6 +60,9 @@ describe('Podcast Workflow Integration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     config = getDefaultBackendConfig();
+    // Force Gemini provider so the mocked @google/genai is used regardless of env vars
+    config.llm.provider = 'gemini';
+    config.tts.provider = 'gemini';
   });
   
   describe('Configuration Validation', () => {
@@ -74,16 +96,7 @@ describe('Podcast Workflow Integration', () => {
     });
     
     it('should handle script generation errors gracefully', async () => {
-      // Mock an error in the Google GenAI
-      jest.mock('@google/genai', () => ({
-        GoogleGenAI: jest.fn().mockImplementation(() => ({
-          models: {
-            generateContentStream: jest.fn().mockImplementation(() => {
-              throw new Error('Mocked generation error');
-            })
-          }
-        }))
-      }));
+      mockGenAiState.streamError = new Error('Mocked generation error');
       
       await expect(
         generatePodcastScriptStream(
@@ -97,6 +110,8 @@ describe('Podcast Workflow Integration', () => {
           config
         ).next()
       ).rejects.toThrow('Gemini script generation failed: Mocked generation error');
+      
+      mockGenAiState.streamError = null;
     });
   });
   
@@ -113,54 +128,47 @@ describe('Podcast Workflow Integration', () => {
     });
     
     it('should handle metadata generation errors gracefully', async () => {
-      // Mock an error in metadata generation
-      jest.mock('@google/genai', () => ({
-        GoogleGenAI: jest.fn().mockImplementation(() => ({
-          models: {
-            generateContent: jest.fn().mockRejectedValue(new Error('Mocked metadata error'))
-          }
-        }))
-      }));
+      mockGenAiState.metadataError = new Error('Mocked metadata error');
       
       await expect(
         generatePodcastMetadata('Test script', config)
       ).rejects.toThrow('Gemini metadata generation failed: Mocked metadata error');
+      
+      mockGenAiState.metadataError = null;
     });
   });
   
   describe('Complete Podcast Creation Workflow', () => {
     it('should create a complete podcast from documents to audio', async () => {
-      // Mock the audio generation to return a valid audio URL
-      const originalGenerateAudio = generatePodcastAudio;
-      (generatePodcastAudio as any) = jest.fn().mockResolvedValue('mock-audio-url');
+      // Step 1: Generate script
+      const scriptChunks: string[] = [];
+      for await (const chunk of generatePodcastScriptStream(
+        mockDocuments, 
+        'Complete Workflow Test', 
+        10, 
+        'solo', 
+        mockSpeakers, 
+        'en', 
+        'professional', 
+        config
+      )) {
+        scriptChunks.push(chunk);
+      }
+      
+      const fullScript = scriptChunks.join('');
+      expect(fullScript.length).toBeGreaterThan(0);
+      
+      // Step 2: Generate metadata
+      const metadata = await generatePodcastMetadata(fullScript, config);
+      expect(metadata.title).toBeTruthy();
+      expect(metadata.description).toBeTruthy();
+      
+      // Step 3: Generate audio - stub the audio service to avoid network/audio calls
+      const mockOnProgress = jest.fn();
+      const audioSpy = jest.spyOn(ttsServices, 'generatePodcastAudio').mockResolvedValue('mock-audio-url');
       
       try {
-        // Step 1: Generate script
-        const scriptChunks: string[] = [];
-        for await (const chunk of generatePodcastScriptStream(
-          mockDocuments, 
-          'Complete Workflow Test', 
-          10, 
-          'solo', 
-          mockSpeakers, 
-          'en', 
-          'professional', 
-          config
-        )) {
-          scriptChunks.push(chunk);
-        }
-        
-        const fullScript = scriptChunks.join('');
-        expect(fullScript.length).toBeGreaterThan(0);
-        
-        // Step 2: Generate metadata
-        const metadata = await generatePodcastMetadata(fullScript, config);
-        expect(metadata.title).toBeTruthy();
-        expect(metadata.description).toBeTruthy();
-        
-        // Step 3: Generate audio
-        const mockOnProgress = jest.fn();
-        const audioUrl = await generatePodcastAudio(
+        const audioUrl = await ttsServices.generatePodcastAudio(
           fullScript, 
           'solo', 
           mockSpeakers, 
@@ -168,13 +176,10 @@ describe('Podcast Workflow Integration', () => {
           config, 
           mockOnProgress
         );
-        
         expect(audioUrl).toBe('mock-audio-url');
-        expect(mockOnProgress).toHaveBeenCalled();
-        
+        expect(mockOnProgress).not.toHaveBeenCalled(); // stubbed function doesn't update progress
       } finally {
-        // Restore original function
-        (generatePodcastAudio as any) = originalGenerateAudio;
+        audioSpy.mockRestore();
       }
     });
   });

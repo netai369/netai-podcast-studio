@@ -3,8 +3,11 @@ const CHUNK_OVERLAP = 500;
 
 // Token-basierte Chunking-Konstanten
 const MAX_TOKENS_PER_CHUNK = 4800; // Sicherheitspuffer unter 5000 Token
-const TOKEN_TO_CHAR_RATIO = 0.75; // Durchschnittliches Zeichen-zu-Token-Verhältnis
-const SAFE_MAX_CHARS = Math.floor(MAX_TOKENS_PER_CHUNK * TOKEN_TO_CHAR_RATIO);
+// Konvertiert die Token-Grenze in eine Zeichen-Grenze.
+// Bei ~1.3 Token pro Zeichen (siehe estimateTokenCount) entspricht
+// 1 Zeichen ~= 1 / 1.3 Token, also ist der Zeichen-faktor ~0.77.
+const CHARS_PER_TOKEN = 1.3;
+const SAFE_MAX_CHARS = Math.floor(MAX_TOKENS_PER_CHUNK / CHARS_PER_TOKEN);
 
 export const chunkDocument = (doc: { name: string, content: string }): Array<{ name: string, content: string }> => {
     if (doc.content.length <= CHUNK_SIZE) return [{ ...doc }];
@@ -86,18 +89,17 @@ export const chunkScriptBySpeakerTurns = (script: string): string[] => {
 
 // Hilfsfunktionen für Token-Validierung
 export const estimateTokenCount = (text: string): number => {
-    // Einfache Schätzung: ~1.3 Zeichen pro Token für europäische Sprachen
-    return Math.ceil(text.length * 1.3);
+    // Einfache Schätzung: ~1.3 Token pro Zeichen für englische Texte
+    return Math.ceil(text.length * CHARS_PER_TOKEN);
 };
 
 export const validateChunkTokens = (chunks: string[]): { valid: boolean; oversized: string[] } => {
     const oversized: string[] = [];
-    const maxTokens = 5000;
 
     for (const chunk of chunks) {
         const tokenCount = estimateTokenCount(chunk);
-        if (tokenCount > maxTokens) {
-            oversized.push(`Chunk mit ${tokenCount} Token (Max: ${maxTokens})`);
+        if (tokenCount > MAX_TOKENS_PER_CHUNK) {
+            oversized.push(`Chunk mit ${tokenCount} Token (Max: ${MAX_TOKENS_PER_CHUNK})`);
         }
     }
 
