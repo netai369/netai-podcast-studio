@@ -1,10 +1,13 @@
 <script lang="ts">
-  import { settingsStore } from '@/stores';
+  import { get } from 'svelte/store';
+  import { settingsStore, i18n } from '@/stores';
   import { generatePodcastAudio, fetchAvailableVoices, generateVoicePreviewAudio, deleteVoice } from '@/services/ttsServices';
   import { VOICES_BY_LANGUAGE } from '@/constants';
   import { createWavBlob, resampleLinear, floatToInt16, playBase64Audio, PeakAccumulator } from '@/utils/audio';
   import Spinner from '@/components/Spinner.svelte';
   import Waveform from '@/components/Waveform.svelte';
+
+  const t = (key: string, replacements?: Record<string, string>) => get(i18n).t(key, replacements);
 
   let text = '';
   let language = 'de';
@@ -70,7 +73,7 @@
 
   async function handleCloneVoice() {
     if (!voiceFile) {
-      cloneError = 'Select a WAV file first.';
+      cloneError = t('tts.errors.selectFile');
       return;
     }
     cloning = true;
@@ -86,14 +89,14 @@
       });
       if (!resp.ok) {
         const txt = await resp.text();
-        throw new Error(`Upload failed: ${resp.status} ${txt}`);
+        throw new Error(t('tts.errors.uploadFailed', { status: String(resp.status), message: txt }));
       }
       const data = await resp.json();
       uploadedVoices = [...uploadedVoices, { id: data.voice_id, label: data.label }];
       voice = data.voice_id;
       voiceFile = null;
     } catch (e) {
-      cloneError = e instanceof Error ? e.message : 'Voice cloning failed.';
+      cloneError = e instanceof Error ? e.message : t('tts.errors.cloningFailed');
     } finally {
       cloning = false;
     }
@@ -106,7 +109,7 @@
       const audioB64 = await generateVoicePreviewAudio(voice, $settingsStore, language);
       await playBase64Audio(audioB64);
     } catch (e) {
-      cloneError = e instanceof Error ? e.message : 'Preview failed.';
+      cloneError = e instanceof Error ? e.message : t('tts.errors.previewFailed');
     } finally {
       previewing = false;
     }
@@ -114,7 +117,7 @@
 
   async function handleDeleteVoice() {
     if (!voice.startsWith('cloned_')) return;
-    if (!confirm('Delete this cloned voice?')) return;
+    if (!confirm(t('tts.errors.deleteConfirm'))) return;
     deleting = true;
     cloneError = '';
     try {
@@ -122,7 +125,7 @@
       uploadedVoices = uploadedVoices.filter(v => v.id !== voice);
       voice = 'nova';
     } catch (e) {
-      cloneError = e instanceof Error ? e.message : 'Delete failed.';
+      cloneError = e instanceof Error ? e.message : t('tts.errors.deleteFailed');
     } finally {
       deleting = false;
     }
@@ -229,7 +232,7 @@
       teardownRecordingGraph();
       const name = e?.name || e?.constructor?.name || 'Error';
       const message = e?.message || 'Microphone access denied.';
-      cloneError = `Microphone error (${name}): ${message}. If the browser did not prompt, check the site permission in browser settings and allow microphone access for this URL.`;
+      cloneError = t('tts.errors.micError', { name, message });
     }
   }
 
@@ -262,7 +265,7 @@
   function finalizeRecording(chunks: Float32Array[], captureRate: number) {
     const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
     if (total === 0) {
-      cloneError = 'No audio was captured. Please try again.';
+      cloneError = t('tts.errors.noAudio');
       return;
     }
     const merged = new Float32Array(total);
@@ -293,7 +296,7 @@
     audioUrl = '';
     generatedProgress = 0;
     if (!text.trim()) {
-      error = 'Enter text to synthesize.';
+      error = t('tts.errors.enterText');
       return;
     }
     generating = true;
@@ -301,7 +304,7 @@
       const speakers = [{ name: 'Speaker', voice }];
       audioUrl = await generatePodcastAudio(text, 'solo', speakers, 'professional', $settingsStore, () => {}, language);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Speech generation failed.';
+      error = e instanceof Error ? e.message : t('tts.errors.generationFailed');
     } finally {
       generating = false;
     }
@@ -309,12 +312,12 @@
 </script>
 
 <section class="bg-slate-800 rounded-lg shadow-lg p-6">
-  <h2 class="text-xl font-bold mb-2 text-slate-100">Quick Text to Speech</h2>
-  <p class="text-sm text-slate-400 mb-4">Generate speech directly through the configured NetAI TTS endpoint.</p>
-  <textarea bind:value={text} rows="5" placeholder="Enter text to synthesize..." class="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-slate-100"></textarea>
+  <h2 class="text-xl font-bold mb-2 text-slate-100">{$i18n.t('tts.title')}</h2>
+  <p class="text-sm text-slate-400 mb-4">{$i18n.t('tts.subtitle')}</p>
+  <textarea bind:value={text} rows="5" placeholder={$i18n.t('tts.placeholder')} class="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-slate-100"></textarea>
   <div class="grid grid-cols-2 gap-3 mt-3">
     <select bind:value={language} class="bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-slate-100">
-      <option value="de">German</option><option value="en">English</option><option value="fr">French</option><option value="it">Italian</option>
+      <option value="de">{$i18n.t('tts.langDe')}</option><option value="en">{$i18n.t('tts.langEn')}</option><option value="fr">{$i18n.t('tts.langFr')}</option><option value="it">{$i18n.t('tts.langIt')}</option>
     </select>
     <select bind:value={voice} class="bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-slate-100">
       {#each allVoices as item}<option value={item.id}>{item.label}</option>{/each}
@@ -323,53 +326,53 @@
 
   <div class="mt-2 flex gap-2 items-center">
     <button on:click={handlePreviewVoice} disabled={previewing || deleting || !voice} class="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white rounded-md text-sm font-medium">
-      {#if previewing}<Spinner />{:else}Preview{/if}
+      {#if previewing}<Spinner />{:else}{$i18n.t('tts.preview')}{/if}
     </button>
     {#if voice.startsWith('cloned_')}
       <button on:click={handleDeleteVoice} disabled={previewing || deleting} class="px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-md text-sm font-medium">
-        {#if deleting}<Spinner />{:else}Delete{/if}
+        {#if deleting}<Spinner />{:else}{$i18n.t('tts.delete')}{/if}
       </button>
     {/if}
   </div>
 
   <div class="mt-3 p-3 bg-slate-700/50 rounded-md">
-    <p class="text-xs text-slate-400 mb-2">Voice cloning: upload or record a reference WAV (mono, 24 kHz recommended).</p>
+    <p class="text-xs text-slate-400 mb-2">{$i18n.t('tts.voiceCloningHint')}</p>
     <div class="flex gap-2 items-center">
       <input type="file" accept="audio/wav" on:change={handleVoiceFileChange} class="block text-sm text-slate-300 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700" />
       <button on:click={handleCloneVoice} disabled={cloning || !voiceFile} class="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white rounded-md text-sm font-medium">
-        {#if cloning}<Spinner />{:else}Clone{/if}
+        {#if cloning}<Spinner />{:else}{$i18n.t('tts.clone')}{/if}
       </button>
     </div>
     <div class="flex gap-2 items-center mt-2">
       {#if recording}
-        <button on:click={stopRecording} class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium">Stop Recording</button>
+        <button on:click={stopRecording} class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium">{$i18n.t('tts.stopRecording')}</button>
       {:else}
-        <button on:click={startRecording} class="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 text-white rounded-md text-sm font-medium">Record</button>
+        <button on:click={startRecording} class="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 text-white rounded-md text-sm font-medium">{$i18n.t('tts.record')}</button>
       {/if}
       {#if recordedBlob}
-        <button on:click={discardRecording} class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-md text-sm font-medium">Discard</button>
+        <button on:click={discardRecording} class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-md text-sm font-medium">{$i18n.t('tts.discard')}</button>
       {/if}
     </div>
     <div class="mt-2">
       {#if recording}
-        <Waveform peaks={livePeaks} progress={1} label="Live recording waveform" />
-        <p class="mt-1 text-xs text-slate-400">Live waveform · {recordSeconds.toFixed(1)}s</p>
+        <Waveform peaks={livePeaks} progress={1} label={$i18n.t('tts.ariaLive')} />
+        <p class="mt-1 text-xs text-slate-400">{$i18n.t('tts.liveWaveform')} · {recordSeconds.toFixed(1)}s</p>
       {:else if recordedUrl}
         <Waveform
           src={recordedUrl}
           progress={recordProgress}
-          label="Recording waveform"
+          label={$i18n.t('tts.ariaRecording')}
           on:seek={(e) => handleRecordSeek(e.detail)}
         />
         <audio bind:this={recordAudio} src={recordedUrl} on:timeupdate={handleRecordTimeUpdate} controls class="mt-2 w-full"></audio>
-        <p class="mt-1 text-xs text-slate-400">Recording overview — click the waveform to seek.</p>
+        <p class="mt-1 text-xs text-slate-400">{$i18n.t('tts.recordingOverview')}</p>
       {/if}
     </div>
     {#if cloneError}<p class="mt-2 text-sm text-red-400">{cloneError}</p>{/if}
   </div>
 
   <button on:click={generate} disabled={generating} class="mt-4 w-full flex justify-center items-center py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-md font-medium">
-    {#if generating}<Spinner />{:else}Generate Speech{/if}
+    {#if generating}<Spinner />{:else}{$i18n.t('tts.generate')}{/if}
   </button>
   {#if error}<p class="mt-3 text-sm text-red-400">{error}</p>{/if}
   {#if audioUrl}
@@ -377,11 +380,11 @@
       <Waveform
         src={audioUrl}
         progress={generatedProgress}
-        label="Generated speech waveform"
+        label={$i18n.t('tts.ariaGenerated')}
         on:seek={(e) => handleGeneratedSeek(e.detail)}
       />
       <audio bind:this={generatedAudio} src={audioUrl} on:timeupdate={handleGeneratedTimeUpdate} controls autoplay class="mt-2 w-full"></audio>
-      <p class="mt-1 text-xs text-slate-400">Generated audio — click the waveform to seek.</p>
+      <p class="mt-1 text-xs text-slate-400">{$i18n.t('tts.generatedHint')}</p>
     </div>
   {/if}
 </section>

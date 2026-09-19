@@ -102,6 +102,41 @@ export default {
         refreshingModels: "Actualisation...",
         doneButton: "Terminé"
     },
+    tts: {
+        title: "Synthèse vocale rapide",
+        subtitle: "Générez de la parole directement via le point de terminaison TTS NetAI configuré.",
+        placeholder: "Saisissez le texte à synthétiser...",
+        langDe: "Allemand",
+        langEn: "Anglais",
+        langFr: "Français",
+        langIt: "Italien",
+        preview: "Aperçu",
+        delete: "Supprimer",
+        voiceCloningHint: "Clonage vocal : importez ou enregistrez un WAV de référence (mono, 24 kHz recommandé).",
+        clone: "Cloner",
+        record: "Enregistrer",
+        stopRecording: "Arrêter l'enregistrement",
+        discard: "Annuler",
+        generate: "Générer la parole",
+        liveWaveform: "Forme d'onde en direct",
+        recordingOverview: "Aperçu de l'enregistrement — cliquez sur la forme d'onde pour naviguer.",
+        generatedHint: "Audio généré — cliquez sur la forme d'onde pour naviguer.",
+        ariaLive: "Forme d'onde d'enregistrement en direct",
+        ariaRecording: "Forme d'onde de l'enregistrement",
+        ariaGenerated: "Forme d'onde de la parole générée",
+        errors: {
+            selectFile: "Sélectionnez d'abord un fichier WAV.",
+            cloningFailed: "Le clonage vocal a échoué.",
+            previewFailed: "L'aperçu a échoué.",
+            deleteFailed: "La suppression a échoué.",
+            deleteConfirm: "Supprimer cette voix clonée ?",
+            micError: "Erreur de microphone ({{name}}) : {{message}}. Si le navigateur n'a pas demandé, vérifiez l'autorisation du site et autorisez l'accès au microphone pour cette URL.",
+            noAudio: "Aucun audio n'a été capturé. Veuillez réessayer.",
+            enterText: "Saisissez le texte à synthétiser.",
+            generationFailed: "La génération de parole a échoué.",
+            uploadFailed: "Échec de l'import : {{status}} {{message}}"
+        }
+    },
     progress: {
         generatingScript: "Génération du script, veuillez patienter...",
         generatingAudio: "Synthèse de l'audio..."

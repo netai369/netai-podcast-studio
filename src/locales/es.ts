@@ -102,6 +102,41 @@ export default {
         refreshingModels: "Actualizando...",
         doneButton: "Hecho"
     },
+    tts: {
+        title: "Texto a voz rápido",
+        subtitle: "Genera voz directamente a través del endpoint TTS de NetAI configurado.",
+        placeholder: "Introduce el texto para sintetizar...",
+        langDe: "Alemán",
+        langEn: "Inglés",
+        langFr: "Francés",
+        langIt: "Italiano",
+        preview: "Vista previa",
+        delete: "Eliminar",
+        voiceCloningHint: "Clonación de voz: sube o graba un WAV de referencia (mono, 24 kHz recomendado).",
+        clone: "Clonar",
+        record: "Grabar",
+        stopRecording: "Detener grabación",
+        discard: "Descartar",
+        generate: "Generar voz",
+        liveWaveform: "Forma de onda en vivo",
+        recordingOverview: "Resumen de la grabación — haz clic en la forma de onda para desplazarte.",
+        generatedHint: "Audio generado — haz clic en la forma de onda para desplazarte.",
+        ariaLive: "Forma de onda de grabación en vivo",
+        ariaRecording: "Forma de onda de la grabación",
+        ariaGenerated: "Forma de onda de la voz generada",
+        errors: {
+            selectFile: "Selecciona primero un archivo WAV.",
+            cloningFailed: "La clonación de voz falló.",
+            previewFailed: "La vista previa falló.",
+            deleteFailed: "La eliminación falló.",
+            deleteConfirm: "¿Eliminar esta voz clonada?",
+            micError: "Error de micrófono ({{name}}): {{message}}. Si el navegador no preguntó, comprueba el permiso del sitio y permite el acceso al micrófono para esta URL.",
+            noAudio: "No se capturó audio. Inténtalo de nuevo.",
+            enterText: "Introduce el texto para sintetizar.",
+            generationFailed: "La generación de voz falló.",
+            uploadFailed: "Error al subir: {{status}} {{message}}"
+        }
+    },
     progress: {
         generatingScript: "Generando guion, por favor espera...",
         generatingAudio: "Sintetizando audio..."

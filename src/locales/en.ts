@@ -102,6 +102,41 @@ export default {
         refreshingModels: "Refreshing...",
         doneButton: "Done"
     },
+    tts: {
+        title: "Quick Text to Speech",
+        subtitle: "Generate speech directly through the configured NetAI TTS endpoint.",
+        placeholder: "Enter text to synthesize...",
+        langDe: "German",
+        langEn: "English",
+        langFr: "French",
+        langIt: "Italian",
+        preview: "Preview",
+        delete: "Delete",
+        voiceCloningHint: "Voice cloning: upload or record a reference WAV (mono, 24 kHz recommended).",
+        clone: "Clone",
+        record: "Record",
+        stopRecording: "Stop Recording",
+        discard: "Discard",
+        generate: "Generate Speech",
+        liveWaveform: "Live waveform",
+        recordingOverview: "Recording overview — click the waveform to seek.",
+        generatedHint: "Generated audio — click the waveform to seek.",
+        ariaLive: "Live recording waveform",
+        ariaRecording: "Recording waveform",
+        ariaGenerated: "Generated speech waveform",
+        errors: {
+            selectFile: "Select a WAV file first.",
+            cloningFailed: "Voice cloning failed.",
+            previewFailed: "Preview failed.",
+            deleteFailed: "Delete failed.",
+            deleteConfirm: "Delete this cloned voice?",
+            micError: "Microphone error ({{name}}): {{message}}. If the browser did not prompt, check the site permission in browser settings and allow microphone access for this URL.",
+            noAudio: "No audio was captured. Please try again.",
+            enterText: "Enter text to synthesize.",
+            generationFailed: "Speech generation failed.",
+            uploadFailed: "Upload failed: {{status}} {{message}}"
+        }
+    },
     progress: {
         generatingScript: "Generating script, please wait...",
         generatingAudio: "Synthesizing audio..."

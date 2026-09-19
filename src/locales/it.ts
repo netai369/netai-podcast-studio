@@ -102,6 +102,41 @@ export default {
         refreshingModels: "Aggiornamento...",
         doneButton: "Fatto"
     },
+    tts: {
+        title: "Sintesi vocale rapida",
+        subtitle: "Genera voce direttamente tramite l'endpoint TTS NetAI configurato.",
+        placeholder: "Inserisci il testo da sintetizzare...",
+        langDe: "Tedesco",
+        langEn: "Inglese",
+        langFr: "Francese",
+        langIt: "Italiano",
+        preview: "Anteprima",
+        delete: "Elimina",
+        voiceCloningHint: "Clonazione vocale: carica o registra un WAV di riferimento (mono, 24 kHz consigliato).",
+        clone: "Clona",
+        record: "Registra",
+        stopRecording: "Interrompi registrazione",
+        discard: "Scarta",
+        generate: "Genera voce",
+        liveWaveform: "Forma d'onda in tempo reale",
+        recordingOverview: "Panoramica della registrazione — fai clic sulla forma d'onda per spostarti.",
+        generatedHint: "Audio generato — fai clic sulla forma d'onda per spostarti.",
+        ariaLive: "Forma d'onda della registrazione in tempo reale",
+        ariaRecording: "Forma d'onda della registrazione",
+        ariaGenerated: "Forma d'onda della voce generata",
+        errors: {
+            selectFile: "Seleziona prima un file WAV.",
+            cloningFailed: "Clonazione vocale non riuscita.",
+            previewFailed: "Anteprima non riuscita.",
+            deleteFailed: "Eliminazione non riuscita.",
+            deleteConfirm: "Eliminare questa voce clonata?",
+            micError: "Errore microfono ({{name}}): {{message}}. Se il browser non ha chiesto, controlla l'autorizzazione del sito e consenti l'accesso al microfono per questo URL.",
+            noAudio: "Nessun audio acquisito. Riprova.",
+            enterText: "Inserisci il testo da sintetizzare.",
+            generationFailed: "Generazione vocale non riuscita.",
+            uploadFailed: "Caricamento non riuscito: {{status}} {{message}}"
+        }
+    },
     progress: {
         generatingScript: "Generazione script in corso, attendere...",
         generatingAudio: "Sintesi audio in corso..."

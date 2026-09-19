@@ -102,6 +102,41 @@ export default {
         refreshingModels: "Aktualisiere...",
         doneButton: "Fertig"
     },
+    tts: {
+        title: "Schnelle Text-zu-Sprache",
+        subtitle: "Sprache direkt über den konfigurierten NetAI-TTS-Endpunkt erzeugen.",
+        placeholder: "Text zum Synthetisieren eingeben...",
+        langDe: "Deutsch",
+        langEn: "Englisch",
+        langFr: "Französisch",
+        langIt: "Italienisch",
+        preview: "Vorschau",
+        delete: "Löschen",
+        voiceCloningHint: "Stimmklonen: Referenz-WAV hochladen oder aufnehmen (mono, 24 kHz empfohlen).",
+        clone: "Klonen",
+        record: "Aufnehmen",
+        stopRecording: "Aufnahme stoppen",
+        discard: "Verwerfen",
+        generate: "Sprache erzeugen",
+        liveWaveform: "Live-Wellenform",
+        recordingOverview: "Aufnahmeübersicht — zum Spulen auf die Wellenform klicken.",
+        generatedHint: "Erzeugtes Audio — zum Spulen auf die Wellenform klicken.",
+        ariaLive: "Live-Aufnahme-Wellenform",
+        ariaRecording: "Aufnahme-Wellenform",
+        ariaGenerated: "Wellenform der erzeugten Sprache",
+        errors: {
+            selectFile: "Bitte zuerst eine WAV-Datei auswählen.",
+            cloningFailed: "Stimmklonen fehlgeschlagen.",
+            previewFailed: "Vorschau fehlgeschlagen.",
+            deleteFailed: "Löschen fehlgeschlagen.",
+            deleteConfirm: "Diese geklonte Stimme löschen?",
+            micError: "Mikrofonfehler ({{name}}): {{message}}. Falls der Browser nicht gefragt hat, prüfe die Website-Berechtigung und erlaube den Mikrofonzugriff für diese URL.",
+            noAudio: "Es wurde kein Audio aufgenommen. Bitte erneut versuchen.",
+            enterText: "Text zum Synthetisieren eingeben.",
+            generationFailed: "Spracherzeugung fehlgeschlagen.",
+            uploadFailed: "Upload fehlgeschlagen: {{status}} {{message}}"
+        }
+    },
     progress: {
         generatingScript: "Skript wird generiert, bitte warten...",
         generatingAudio: "Audio wird synthetisiert..."
