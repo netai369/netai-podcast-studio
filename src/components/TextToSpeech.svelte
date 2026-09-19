@@ -44,6 +44,12 @@
 
   $: allVoices = [...languageVoices, ...uploadedVoices];
 
+  // Switching language must not keep a voice that only exists in the previous
+  // language (it would either 404 or resolve to the wrong bundle's voice).
+  $: if (languageVoices.length > 0 && !voice.startsWith('cloned_') && !languageVoices.some(v => v.id === voice)) {
+    voice = languageVoices[0].id;
+  }
+
   async function loadVoices() {
     try {
       const voices = await fetchAvailableVoices($settingsStore);

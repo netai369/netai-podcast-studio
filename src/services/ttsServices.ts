@@ -3,7 +3,7 @@ import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { EdgeTTS, listVoices } from 'edge-tts-universal/browser';
 import type { Document, PodcastStyle, SpeakerConfig, BackendConfig, PodcastNarrationStyle, AvailableModels } from "@/types";
 import { chunkDocument, chunkScriptForTTS, chunkScriptBySpeakerTurns, validateChunkTokens } from "@/utils/text";
-import { getVoicePreviewText, VOICES_BY_LANGUAGE, CUSTOM_VOICE_ID, getLanguageName } from "@/constants";
+import { getVoicePreviewText, VOICES_BY_LANGUAGE, CUSTOM_VOICE_ID, getLanguageName, getTtsModelForLanguage } from "@/constants";
 import type { LogLevel } from "@/types";
 
 // Logger utility
@@ -604,6 +604,10 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
     logDebug(' Chunking method:', style === 'conversation' ? 'by speaker turns' : 'by length');
     
     const effectiveLang = lang || conf.tts.language || 'en';
+    // PocketTTS bundles are language-specific; never send a model that
+    // conflicts with the chosen language (a persisted de_6l would force the
+    // German voice onto English/French/Italian text).
+    const ttsModel = getTtsModelForLanguage(effectiveLang) ?? conf.tts.model;
 
     // Validiere die Token-Anzahl jedes Chunks
     const tokenValidation = validateChunkTokens(chunks);
@@ -653,7 +657,7 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
                 logDebug(' Speaker for chunk:', { potentialSpeakerName, usedSpeaker: speaker.name, voice, textPreview: text.substring(0, 50) + '...' });
                  
                  // Verwende die neue Binärstream-fähige Funktion
-                 const result = await generateAudioOpenAIWithBinaryStream(conf.tts.openAudioUrl, text, voice, true, effectiveLang, 'openai', conf.tts.model);
+                 const result = await generateAudioOpenAIWithBinaryStream(conf.tts.openAudioUrl, text, voice, true, effectiveLang, 'openai', ttsModel);
                  audioB64 = result.data;
                  isCompressedFormat = result.format === 'mp3';
                  logDebug(` OpenAI chunk ${i+1} processed - format: ${result.format}, isBinary: ${result.isBinary}, dataLength: ${result.data.length}`);
@@ -677,7 +681,7 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
                  logDebug(' Speaker for chunk:', { potentialSpeakerName, usedSpeaker: speaker.name, voice, textPreview: text.substring(0, 50) + '...' });
                  
                  // Verwende die neue Binärstream-fähige Funktion für Supertonic
-                 const result = await generateAudioOpenAIWithBinaryStream(conf.tts.openAudioUrl, text, voice, true, effectiveLang, 'supertonic', conf.tts.model);
+                 const result = await generateAudioOpenAIWithBinaryStream(conf.tts.openAudioUrl, text, voice, true, effectiveLang, 'supertonic', ttsModel);
                  audioB64 = result.data;
                  isCompressedFormat = result.format === 'mp3';
                  logDebug(` Supertonic chunk ${i+1} processed - format: ${result.format}, isBinary: ${result.isBinary}, dataLength: ${result.data.length}`);
@@ -925,15 +929,16 @@ export const generateVoicePreviewAudio = async (voice: string, conf: BackendConf
         logDebug(' Voice preview generated, length:', result.length);
         return result;
     }
+    const previewModel = getTtsModelForLanguage(language) ?? conf.tts.model;
     if (conf.tts.provider === 'openai' && conf.tts.openAudioUrl) {
             logDebug(' Generating voice preview for OpenAI');
             // Use binary stream for OpenAI preview as well, pass language
-            const result = await generateAudioOpenAIWithBinaryStream(conf.tts.openAudioUrl, previewText, voice, true, language, 'openai', conf.tts.model);
+            const result = await generateAudioOpenAIWithBinaryStream(conf.tts.openAudioUrl, previewText, voice, true, language, 'openai', previewModel);
             logDebug(' Voice preview generated, length:', result.data.length);
             return result.data;
     } else if (conf.tts.provider === 'supertonic' && conf.tts.openAudioUrl) {
         logDebug(' Generating voice preview for Supertonic');
-        const result = await generateAudioOpenAIWithBinaryStream(conf.tts.openAudioUrl, previewText, voice, true, language, 'supertonic', conf.tts.model);
+        const result = await generateAudioOpenAIWithBinaryStream(conf.tts.openAudioUrl, previewText, voice, true, language, 'supertonic', previewModel);
         logDebug(' Voice preview generated, length:', result.data.length);
         return result.data;
     } else if (conf.tts.provider === 'edge-tts') {

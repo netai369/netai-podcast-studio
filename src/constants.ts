@@ -124,6 +124,21 @@ export const VOICES_BY_LANGUAGE: Record<string, { name: string; gender: 'M' | 'F
     tr: VOICES_BY_LANGUAGE_FALLBACK,
 };
 
+// PocketTTS models are language bundles. The backend resolves the bundle from
+// `lang` when no (or an unknown) model is sent, but an explicit model wins —
+// so a persisted default like de_6l must never be sent for en/fr/it.
+export const TTS_MODEL_BY_LANGUAGE: Record<string, string> = {
+    de: 'de_6l',
+    en: 'en_6l',
+    fr: 'fr_24l',
+    it: 'it_6l',
+};
+
+export const getTtsModelForLanguage = (lang: string | undefined | null): string | undefined => {
+    if (!lang) return undefined;
+    return TTS_MODEL_BY_LANGUAGE[lang.split(/[-_]/)[0].toLowerCase()];
+};
+
 export const DEFAULT_NAMES_BY_LANGUAGE: Record<string, { M: string[], F: string[] }> = {
     en: { M: ['Joe', 'David'], F: ['Jane', 'Sarah'] },
     de: { M: ['Jonas', 'Lukas'], F: ['Julia', 'Lena'] },
