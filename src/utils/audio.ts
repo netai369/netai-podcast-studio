@@ -27,7 +27,7 @@ export function encodeBytesToBase64(bytes: Uint8Array): string {
     return btoa(binary);
 }
 
-function createWavBlob(pcmData: Int16Array, sampleRate: number, numChannels: number): Blob {
+export function createWavBytes(pcmData: Int16Array, sampleRate: number, numChannels: number): Uint8Array<ArrayBuffer> {
     const bitsPerSample = 16;
     const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
     const blockAlign = numChannels * (bitsPerSample / 8);
@@ -42,7 +42,7 @@ function createWavBlob(pcmData: Int16Array, sampleRate: number, numChannels: num
     writeString(view, 8, 'WAVE');
     writeString(view, 12, 'fmt ');
     view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); 
+    view.setUint16(20, 1, true);
     view.setUint16(22, numChannels, true);
     view.setUint32(24, sampleRate, true);
     view.setUint32(28, byteRate, true);
@@ -56,13 +56,222 @@ function createWavBlob(pcmData: Int16Array, sampleRate: number, numChannels: num
         view.setInt16(offset, pcmData[i], true);
     }
 
-    return new Blob([view], { type: 'audio/wav' });
+    return new Uint8Array(buffer);
+}
+
+export function createWavBlob(pcmData: Int16Array, sampleRate: number, numChannels: number): Blob {
+    return new Blob([createWavBytes(pcmData, sampleRate, numChannels)], { type: 'audio/wav' });
 }
 
 function writeString(view: DataView, offset: number, str: string) {
     for (let i = 0; i < str.length; i++) {
         view.setUint8(offset + i, str.charCodeAt(i));
     }
+}
+
+export interface WaveformOptions {
+  /** Colour of the already-played portion. */
+  color?: string;
+  /** Colour of the not-yet-played portion. */
+  dimColor?: string;
+  backgroundColor?: string;
+  lineWidth?: number;
+  /** Playback position 0..1 used to split played/unplayed colours. */
+  progress?: number;
+}
+
+/**
+ * Reduce `samples` to a min/max envelope with exactly `columns` pairs
+ * (interleaved [min, max]) — the shape that both the live and the finished
+ * waveform renderers consume.
+ */
+export function computePeaks(samples: Float32Array | null, columns: number): Float32Array {
+  const cols = Math.max(1, Math.floor(columns));
+  const peaks = new Float32Array(cols * 2);
+  if (!samples || samples.length === 0) return peaks;
+
+  const step = samples.length / cols;
+  for (let c = 0; c < cols; c++) {
+    const start = Math.floor(c * step);
+    const end = Math.min(samples.length, Math.max(start + 1, Math.floor((c + 1) * step)));
+    let min = 1;
+    let max = -1;
+    for (let i = start; i < end; i++) {
+      const v = samples[i];
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    peaks[c * 2] = min;
+    peaks[c * 2 + 1] = max;
+  }
+  return peaks;
+}
+
+/**
+ * Draw an interleaved min/max `peaks` array into `canvas`.
+ *
+ * `peaks` may be at any resolution (live accumulator or a pre-computed
+ * overview); it is bucketed into `canvas.width` columns. The portion before
+ * `progress` is drawn in `color`, the rest in `dimColor`.
+ */
+export function drawPeaks(
+  canvas: HTMLCanvasElement | null,
+  peaks: Float32Array | null,
+  options: WaveformOptions = {}
+): void {
+  if (!canvas) return;
+  const {
+    color = '#38BDF8',
+    dimColor = '#4A5568',
+    backgroundColor = 'rgb(30 41 59)',
+    lineWidth = 2,
+    progress = 0,
+  } = options;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const width = canvas.width;
+  const height = canvas.height;
+  const mid = height / 2;
+
+  ctx.fillStyle = backgroundColor;
+  ctx.fillRect(0, 0, width, height);
+
+  if (!peaks || peaks.length < 2) return;
+
+  const pairs = peaks.length >> 1;
+  const step = pairs / width;
+  const progressX = Math.max(0, Math.min(width, Math.round(width * progress)));
+
+  const drawRange = (from: number, to: number, stroke: string) => {
+    if (to <= from) return;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let x = from; x < to; x++) {
+      const start = Math.floor(x * step);
+      const end = Math.min(pairs, Math.max(start + 1, Math.floor((x + 1) * step)));
+      let min = 1;
+      let max = -1;
+      for (let i = start; i < end; i++) {
+        const mn = peaks[i * 2];
+        const mx = peaks[i * 2 + 1];
+        if (mn < min) min = mn;
+        if (mx > max) max = mx;
+      }
+      const yTop = mid - max * mid;
+      const yBottom = mid - min * mid;
+      ctx.moveTo(x + 0.5, yTop);
+      ctx.lineTo(x + 0.5, Math.max(yBottom, yTop + 0.5));
+    }
+    ctx.stroke();
+  };
+
+  drawRange(0, progressX, color);
+  drawRange(progressX, width, dimColor);
+}
+
+/**
+ * Incremental peak builder for the live recording view.
+ *
+ * Appending one min/max pair per `samplesPerPeak` samples keeps the render
+ * cost and memory flat regardless of recording length, so the waveform grows
+ * smoothly from left to right instead of flickering through a tiny window.
+ */
+export class PeakAccumulator {
+  private readonly samplesPerPeak: number;
+  private peaks: Float32Array;
+  private count = 0;
+  private pendingCount = 0;
+  private pendingMin = Infinity;
+  private pendingMax = -Infinity;
+
+  constructor(samplesPerPeak = 240, initialPairs = 2048) {
+    this.samplesPerPeak = Math.max(1, Math.floor(samplesPerPeak));
+    this.peaks = new Float32Array(Math.max(1, initialPairs) * 2);
+  }
+
+  reset(): void {
+    this.count = 0;
+    this.pendingCount = 0;
+    this.pendingMin = Infinity;
+    this.pendingMax = -Infinity;
+  }
+
+  get length(): number {
+    return this.count;
+  }
+
+  push(chunk: Float32Array): void {
+    for (let i = 0; i < chunk.length; i++) {
+      const v = chunk[i];
+      if (v < this.pendingMin) this.pendingMin = v;
+      if (v > this.pendingMax) this.pendingMax = v;
+      if (++this.pendingCount >= this.samplesPerPeak) this.flush();
+    }
+  }
+
+  /** Current peaks (flushes any partial bucket). Caller gets a copy. */
+  snapshot(): Float32Array {
+    this.flush();
+    return this.peaks.slice(0, this.count * 2);
+  }
+
+  private flush(): void {
+    if (this.pendingCount === 0) return;
+    if ((this.count + 1) * 2 > this.peaks.length) {
+      const grown = new Float32Array(this.peaks.length * 2);
+      grown.set(this.peaks);
+      this.peaks = grown;
+    }
+    this.peaks[this.count * 2] = this.pendingMin;
+    this.peaks[this.count * 2 + 1] = this.pendingMax;
+    this.count++;
+    this.pendingCount = 0;
+    this.pendingMin = Infinity;
+    this.pendingMax = -Infinity;
+  }
+}
+
+/** Decode any browser-playable audio URL (blob: or http) to mono Float32. */
+export async function decodeAudioSamples(url: string): Promise<Float32Array> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch audio: ${response.status}`);
+  const buffer = await response.arrayBuffer();
+  const ctx = getAudioContext();
+  const audioBuffer = await ctx.decodeAudioData(buffer);
+  return new Float32Array(audioBuffer.getChannelData(0));
+}
+
+/**
+ * Linear-interpolation resampler. The TTS models expect 24 kHz mono; some
+ * browsers ignore the requested AudioContext sample rate, so we normalise the
+ * captured PCM ourselves instead of trusting the context rate.
+ */
+export function resampleLinear(input: Float32Array, fromRate: number, toRate: number): Float32Array {
+  if (fromRate === toRate || input.length === 0) return input;
+  const ratio = toRate / fromRate;
+  const outLength = Math.max(1, Math.round(input.length * ratio));
+  const output = new Float32Array(outLength);
+  for (let i = 0; i < outLength; i++) {
+    const pos = i / ratio;
+    const i0 = Math.floor(pos);
+    const i1 = Math.min(i0 + 1, input.length - 1);
+    const frac = pos - i0;
+    output[i] = input[i0] * (1 - frac) + input[i1] * frac;
+  }
+  return output;
+}
+
+export function floatToInt16(samples: Float32Array): Int16Array {
+  const out = new Int16Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return out;
 }
 
 export const createWavUrlFromBase64PCM = async (base64PCM: string): Promise<string> => {
@@ -136,21 +345,17 @@ export const playBase64Audio = async (base64Audio: string, format?: 'mp3' | 'wav
     let audioBuffer: AudioBuffer;
     
     if (detectedFormat === 'mp3' || detectedFormat === 'wav') {
-        // Handle compressed formats (MP3, WAV) - convert Uint8Array to ArrayBuffer
-        const audioArrayBuffer = audioBytes.buffer.slice(audioBytes.byteOffset, audioBytes.byteOffset + audioBytes.byteLength);
+        // Handle compressed formats (MP3, WAV) - copy into a fresh ArrayBuffer
+        // so decodeAudioData can transfer/detach it safely.
+        const audioCopy = new Uint8Array(audioBytes.byteLength);
+        audioCopy.set(audioBytes);
         try {
-            // Ensure we have a regular ArrayBuffer, not SharedArrayBuffer
-            const regularArrayBuffer = audioArrayBuffer instanceof SharedArrayBuffer 
-                ? new ArrayBuffer(audioArrayBuffer.byteLength)
-                : audioArrayBuffer;
-            if (regularArrayBuffer instanceof SharedArrayBuffer) {
-                new Uint8Array(regularArrayBuffer).set(new Uint8Array(audioArrayBuffer));
-            }
-            audioBuffer = await decodeMp3ToPcm(regularArrayBuffer);
+            audioBuffer = await decodeMp3ToPcm(audioCopy.buffer);
         } catch (decodeError) {
-            console.error('DEBUG: Failed to decode MP3/WAV, falling back to PCM interpretation:', decodeError);
-            // If MP3 decoding fails, try to play as PCM (might work for some WAV files)
-            audioBuffer = await decodePCMToAudioBuffer(audioBytes);
+            // Never reinterpret compressed bytes as raw PCM — that produces
+            // loud noise. Surface the real failure instead.
+            console.error('DEBUG: Failed to decode MP3/WAV:', decodeError);
+            throw decodeError instanceof Error ? decodeError : new Error('Failed to decode audio.');
         }
     } else {
         // Handle raw PCM format
@@ -246,30 +451,11 @@ export async function decodeMp3ToPcm(mp3Data: ArrayBuffer): Promise<AudioBuffer>
     
     const ctx = getAudioContext();
     
-    // Versuche zuerst die native Web Audio API Dekodierung
-    try {
-        // WICHTIG: decodeAudioData detached den Buffer, daher Kopie verwenden wenn nötig
-        // Hier slice() wir sowieso, also ist es sicher
-        const audioBuffer = await ctx.decodeAudioData(mp3Data.slice(0));
-        console.log('DEBUG: MP3 decoded with Web Audio API, sample rate:', audioBuffer.sampleRate);
-        return audioBuffer;
-    } catch (nativeError) {
-        console.log('DEBUG: Native decode failed, trying alternative:', nativeError);
-        
-        // Fallback: Versuche es als rohe PCM-Daten zu behandeln
-        // Dies ist eine Notlösung für spezielle Fälle
-        const pcmData = new Int16Array(mp3Data.slice(0));
-        const frameCount = pcmData.length;
-        const fallbackBuffer = ctx.createBuffer(1, frameCount, 24000);
-        const channelData = fallbackBuffer.getChannelData(0);
-        
-        for (let i = 0; i < frameCount; i++) {
-            channelData[i] = pcmData[i] / 32768.0;
-        }
-        
-        console.log('DEBUG: Created fallback PCM buffer from MP3 data');
-        return fallbackBuffer;
-    }
+    // Native Web Audio API decoding. `slice()` hands decodeAudioData a copy so
+    // it can detach the buffer without affecting the caller.
+    const audioBuffer = await ctx.decodeAudioData(mp3Data.slice(0));
+    console.log('DEBUG: MP3 decoded with Web Audio API, sample rate:', audioBuffer.sampleRate);
+    return audioBuffer;
 }
 
 export function detectAudioFormat(data: Uint8Array, contentType?: string): 'mp3' | 'wav' | 'pcm' | 'unknown' {

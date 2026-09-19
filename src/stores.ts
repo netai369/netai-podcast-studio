@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { BackendConfig, User, Language } from '@/types';
+import type { BackendConfig, Language } from '@/types';
 import { translations } from '@/locales/translations';
 
 // --- Helper Functions ---
@@ -19,8 +19,8 @@ function createPersistentStore<T>(key: string, startValue: T) {
 
 // --- Settings Store ---
 const initialSettings: BackendConfig = {
-    llm: { provider: 'gemini', model: undefined },
-    tts: { provider: 'edge-tts', language: 'de' },
+    llm: { provider: 'openai', openAiUrl: '/cascade', openAiKey: '', model: 'cascade-hybrid-v1' },
+    tts: { provider: 'supertonic', openAudioUrl: '/tts/v1/audio/speech', language: 'de', model: 'de_6l' },
     debug: { logLevel: 'INFO' },
 };
 export const settingsStore = createPersistentStore('podcast_studio_backendConfig', initialSettings);
@@ -35,10 +35,6 @@ settingsStore.update(settings => ({
 settingsStore.subscribe(settings => {
     console.log('DEBUG: Settings changed:', settings);
 });
-
-// --- User Store ---
-const initialUser: User | null = null;
-export const userStore = writable<User | null>(initialUser);
 
 // --- i18n Store ---
 const createI18nStore = () => {
@@ -91,17 +87,3 @@ function translate(lang: Language, key: string, replacements: Record<string, str
 }
 
 export const i18n = createI18nStore();
-
-// --- Auth Initialization ---
-// This runs once when the app starts
-if (typeof window !== 'undefined') {
-    const loggedInUserEmail = localStorage.getItem('podcast_studio_currentUser');
-    if (loggedInUserEmail) {
-        const usersJSON = localStorage.getItem('podcast_studio_users');
-        const users: User[] = usersJSON ? JSON.parse(usersJSON) : [];
-        const user = users.find(u => u.email === loggedInUserEmail);
-        if (user) {
-            userStore.set(user);
-        }
-    }
-}

@@ -28,18 +28,18 @@ const getEnvVar = (key: string, fallback: string = ''): string => {
   }
   // In browser environment
   if (typeof window !== 'undefined' && window.importMetaEnv) {
-    return (window.importMetaEnv[key] || fallback);
+    return ((window.importMetaEnv as unknown as Record<string, string>)[key] || fallback);
   }
   return fallback;
 };
 
 // Export environment variables
 export const VITE_API_KEY = getEnvVar('VITE_API_KEY');
-export const VITE_LLM_PROVIDER = getEnvVar('VITE_LLM_PROVIDER', 'gemini');
-export const VITE_LLM_URL = getEnvVar('VITE_LLM_URL');
+export const VITE_LLM_PROVIDER = getEnvVar('VITE_LLM_PROVIDER', 'openai');
+export const VITE_LLM_URL = getEnvVar('VITE_LLM_URL', '/cascade');
 export const VITE_LLM_KEY = getEnvVar('VITE_LLM_KEY');
-export const VITE_TTS_PROVIDER = getEnvVar('VITE_TTS_PROVIDER', 'gemini');
-export const VITE_TTS_URL = getEnvVar('VITE_TTS_URL');
+export const VITE_TTS_PROVIDER = getEnvVar('VITE_TTS_PROVIDER', 'supertonic');
+export const VITE_TTS_URL = getEnvVar('VITE_TTS_URL', '/tts/v1/audio/speech');
 
 export const MODE = getEnvVar('NODE_ENV', '') === 'production' || getEnvVar('MODE', '') === 'production' ? 'production' : 'development';
 

@@ -657,7 +657,7 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
                  audioB64 = result.data;
                  isCompressedFormat = result.format === 'mp3';
                  logDebug(` OpenAI chunk ${i+1} processed - format: ${result.format}, isBinary: ${result.isBinary}, dataLength: ${result.data.length}`);
-             } else if (conf.tts.provider === 'supertonic' && conf.tts.openAudioUrl) {
+                } else if (conf.tts.provider === 'supertonic' && conf.tts.openAudioUrl) {
                  logDebug(' Using Supertonic TTS provider');
                  isCompressedFormat = false; // Supertonic returns WAV by default
                  
@@ -760,9 +760,13 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
                             // Hier erstellen wir sowieso einen neuen ArrayBuffer, also ist es sicher
                             const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
                             audioBuffers.push(audioBuffer);
-                        } else {
+                        } else if (detectedFormat === 'pcm') {
                             // PCM fallback mit bestehender Funktion
                             handlePcmFallback(ctx, audioBytes, i + 1, audioBuffers);
+                        } else {
+                            // Never reinterpret compressed bytes as raw PCM: doing so
+                            // yields loud noise. Skip the chunk instead.
+                            throw new Error(`unsupported fallback for ${detectedFormat} chunk`);
                         }
                         // NICHT schließen, da wir den globalen Kontext wiederverwenden
                         // ctx.close();
@@ -920,7 +924,8 @@ export const generateVoicePreviewAudio = async (voice: string, conf: BackendConf
         const result = await generateAudioGemini(previewText, 'professional', voice);
         logDebug(' Voice preview generated, length:', result.length);
         return result;
-        } else if (conf.tts.provider === 'openai' && conf.tts.openAudioUrl) {
+    }
+    if (conf.tts.provider === 'openai' && conf.tts.openAudioUrl) {
             logDebug(' Generating voice preview for OpenAI');
             // Use binary stream for OpenAI preview as well, pass language
             const result = await generateAudioOpenAIWithBinaryStream(conf.tts.openAudioUrl, previewText, voice, true, language, 'openai', conf.tts.model);
@@ -1041,7 +1046,10 @@ export const fetchAvailableVoices = async (conf: BackendConfig): Promise<{ id: s
         }
     } else if (conf.tts.provider === 'supertonic' && conf.tts.openAudioUrl) {
         try {
-            const baseUrl = conf.tts.openAudioUrl.replace('/audio/speech', '').replace(/\/$/, '');
+            const cleanUrl = conf.tts.openAudioUrl.includes('/v1/audio/speech')
+                ? conf.tts.openAudioUrl.replace('/v1/audio/speech', '')
+                : conf.tts.openAudioUrl.replace('/audio/speech', '');
+            const baseUrl = cleanUrl.replace(/\/$/, '');
             let voicesUrl = `${baseUrl}/v1/voices`;
             logDebug(' Fetching Supertonic voices from:', voicesUrl);
 
@@ -1127,4 +1135,37 @@ export const mixVoices = async (conf: BackendConfig, voiceA: string, voiceB: str
         }
         throw e;
     }
+};
+
+export const deleteVoice = async (conf: BackendConfig, voiceId: string): Promise<void> => {
+    if (!voiceId.startsWith('cloned_')) {
+        throw new Error('Only cloned voices can be deleted.');
+    }
+    const baseUrl = (conf.tts.openAudioUrl || 'http://localhost:8800').replace(/\/v1\/audio\/speech$/, '');
+    const resp = await fetch(`${baseUrl}/v1/voices/${encodeURIComponent(voiceId)}`, {
+        method: 'DELETE',
+    });
+    if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(`Delete failed: ${resp.status} ${txt}`);
+    }
+};
+
+export const previewVoice = async (conf: BackendConfig, voiceId: string): Promise<string> => {
+    const baseUrl = (conf.tts.openAudioUrl || 'http://localhost:8800').replace(/\/v1\/audio\/speech$/, '');
+    const resp = await fetch(`${baseUrl}/v1/audio/speech`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            model: 'pocket-tts',
+            input: 'Hello, this is a preview of your cloned voice.',
+            voice: voiceId,
+        }),
+    });
+    if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(`Preview failed: ${resp.status} ${txt}`);
+    }
+    const blob = await resp.blob();
+    return URL.createObjectURL(blob);
 };

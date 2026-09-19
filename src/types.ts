@@ -1,12 +1,3 @@
-// Authentication and User
-export type AuthView = 'login' | 'register' | 'forgotPassword';
-
-export interface User {
-    username: string;
-    email: string;
-    password?: string;
-}
-
 // Document structure
 export interface Document {
     id: string;

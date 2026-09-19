@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { userStore } from '@/stores';
-  import type { Podcast, Document, AuthView } from '@/types';
+  import type { Podcast, Document } from '@/types';
 
   import Header from '@/components/Header.svelte';
   import DocumentManager from '@/components/DocumentManager.svelte';
@@ -8,9 +7,7 @@
   import PodcastList from '@/components/PodcastList.svelte';
   import AudioPlayer from '@/components/AudioPlayer.svelte';
   import SettingsPage from '@/components/SettingsPage.svelte';
-  import LoginPage from '@/components/LoginPage.svelte';
-  import RegisterPage from '@/components/RegisterPage.svelte';
-  import ForgotPasswordPage from '@/components/ForgotPasswordPage.svelte';
+  import TextToSpeech from '@/components/TextToSpeech.svelte';
   import { onMount } from 'svelte';
 
   let documents: Document[] = [];
@@ -19,28 +16,18 @@
   let playingPodcast: Podcast | null = null;
   let editingPodcast: Podcast | null = null;
   let isSettingsOpen = false;
-  let authView: AuthView = 'login';
   let podcastsLoaded = false;
 
   onMount(() => {
-    // Load podcasts for the current user when they log in/change
-    return userStore.subscribe(user => {
-      podcastsLoaded = false;
-      if (user) {
-        const saved = localStorage.getItem(`podcasts_${user.email}`);
-        podcasts = saved ? JSON.parse(saved).map((p: any) => ({...p, createdAt: new Date(p.createdAt)})) : [];
-        podcastsLoaded = true;
-      } else {
-        podcasts = [];
-        documents = [];
-      }
-    });
+    const saved = localStorage.getItem('podcasts_netai');
+    podcasts = saved ? JSON.parse(saved).map((p: any) => ({...p, createdAt: new Date(p.createdAt)})) : [];
+    podcastsLoaded = true;
   });
 
   // Persist podcasts only after they have been loaded for the current user
   // to avoid overwriting stored data with a stale/empty array during auth changes.
-  $: if ($userStore && podcastsLoaded) {
-    localStorage.setItem(`podcasts_${$userStore.email}`, JSON.stringify(podcasts));
+  $: if (podcastsLoaded) {
+    localStorage.setItem('podcasts_netai', JSON.stringify(podcasts));
   }
   
   function handlePodcastCreated(event: CustomEvent<Podcast>) {
@@ -73,22 +60,12 @@
 </script>
 
 <div class="text-slate-200 min-h-screen font-sans bg-slate-950">
-  {#if !$userStore}
-    <div class="flex items-center justify-center min-h-screen">
-      {#if authView === 'login'}
-        <LoginPage on:navigate={(e) => authView = e.detail} />
-      {:else if authView === 'register'}
-        <RegisterPage on:navigate={(e) => authView = e.detail} />
-      {:else if authView === 'forgotPassword'}
-        <ForgotPasswordPage on:navigate={(e) => authView = e.detail} />
-      {/if}
-    </div>
-  {:else}
     <Header on:openSettings={() => isSettingsOpen = true} />
     
     <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="grid grid-cols-1 lg:grid-cols-2 lg:gap-8">
         <div class="space-y-8">
+          <TextToSpeech />
           <DocumentManager bind:documents />
           <PodcastCreator 
             {documents} 
@@ -113,5 +90,4 @@
     {#if isSettingsOpen}
       <SettingsPage on:close={() => isSettingsOpen = false} />
     {/if}
-  {/if}
 </div>

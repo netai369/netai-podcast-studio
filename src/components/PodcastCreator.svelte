@@ -31,7 +31,7 @@
   let streamingScript = '';
   let availableVoices: { id: string; name: string; gender: 'M' | 'F'; label: string }[] = (VOICES_BY_LANGUAGE[language] || VOICES_BY_LANGUAGE['en']).map(voice => ({
     ...voice,
-    id: voice.name.toLowerCase().replace(/\s+/g, '_')
+    id: voice.name
   }));
   let loadingVoices = false;
   let isEditingExistingPodcast = false;
@@ -136,45 +136,12 @@
   // Don't reset if we just generated a new script
 
   async function loadAvailableVoices() {
-    try {
-      loadingVoices = true;
-      console.log('DEBUG: Loading available voices with config:', $settingsStore);
-      console.log('DEBUG: TTS provider:', $settingsStore.tts?.provider);
-      console.log('DEBUG: TTS URL:', $settingsStore.tts?.openAudioUrl);
-      
-      if (!$settingsStore.tts?.openAudioUrl) {
-        console.warn('DEBUG: No TTS URL configured, using hardcoded voices');
-        availableVoices = (VOICES_BY_LANGUAGE[language] || VOICES_BY_LANGUAGE['en']).map(voice => ({
-          ...voice,
-          id: voice.name
-        }));
-        return;
-      }
-      
-      const fetchedVoices = await fetchAvailableVoices($settingsStore);
-      
-      if (fetchedVoices.length > 0) {
-        availableVoices = fetchedVoices;
-      } else {
-        // Fallback to hardcoded voices if backend returns empty list (e.g. Gemini)
-        console.log('DEBUG: No voices fetched, using hardcoded fallback for language:', language);
-        availableVoices = (VOICES_BY_LANGUAGE[language] || VOICES_BY_LANGUAGE['en']).map(voice => ({
-          ...voice,
-          id: voice.name
-        }));
-      }
-      
-      console.log('DEBUG: Loaded available voices:', availableVoices);
-    } catch (error) {
-      console.error('Failed to load available voices:', error);
-      // Fallback to hardcoded voices if backend fails
-      availableVoices = (VOICES_BY_LANGUAGE[language] || VOICES_BY_LANGUAGE['en']).map(voice => ({
-        ...voice,
-        id: voice.name
-      }));
-    } finally {
-      loadingVoices = false;
-    }
+    loadingVoices = true;
+    availableVoices = (VOICES_BY_LANGUAGE[language] || VOICES_BY_LANGUAGE['en']).map(voice => ({
+      ...voice,
+      id: voice.name
+    }));
+    loadingVoices = false;
   }
 
   function getInitialSpeakersFromAvailableVoices(language: string): SpeakerConfig[] {
