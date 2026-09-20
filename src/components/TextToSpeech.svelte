@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { settingsStore, i18n } from '@/stores';
-  import { generatePodcastAudio, fetchAvailableVoices, generateVoicePreviewAudio, deleteVoice } from '@/services/ttsServices';
+  import { loadRuntimeConfig, voiceCloningAvailable } from '@/utils/runtimeConfig';
+  import { generatePodcastAudio, fetchAvailableVoices, generateVoicePreviewAudio, deleteVoice, detectVoiceCloningSupport } from '@/services/ttsServices';
   import { VOICES_BY_LANGUAGE } from '@/constants';
   import { createWavBlob, resampleLinear, floatToInt16, playBase64Audio, PeakAccumulator } from '@/utils/audio';
   import Spinner from '@/components/Spinner.svelte';
@@ -39,6 +41,21 @@
   let generatedProgress = 0;
   let previewing = false;
   let deleting = false;
+  // Voice cloning needs a reference-WAV/embedding backend (PocketTTS). The
+  // active backend is runtime config, so hide the UI instead of letting the
+  // user hit a 501.
+  let cloneEnabled = voiceCloningAvailable(null);
+
+  // Precedence: runtime config.json > backend /health capability > build-time.
+  onMount(async () => {
+    const cfg = await loadRuntimeConfig();
+    if (typeof cfg.ttsVoiceCloning === 'boolean') {
+      cloneEnabled = cfg.ttsVoiceCloning;
+      return;
+    }
+    const capability = await detectVoiceCloningSupport(get(settingsStore));
+    if (capability !== null) cloneEnabled = capability;
+  });
 
   $: languageVoices = (VOICES_BY_LANGUAGE[language] || VOICES_BY_LANGUAGE['en']).map(v => ({
     id: v.name,
@@ -56,9 +73,9 @@
   async function loadVoices() {
     try {
       const voices = await fetchAvailableVoices($settingsStore);
-      uploadedVoices = voices
-        .filter(v => v.id.startsWith('cloned_'))
-        .map(v => ({ id: v.id, label: v.label }));
+      uploadedVoices = cloneEnabled
+        ? voices.filter(v => v.id.startsWith('cloned_')).map(v => ({ id: v.id, label: v.label }))
+        : [];
     } catch {
       // ignore
     }
@@ -335,6 +352,7 @@
     {/if}
   </div>
 
+  {#if cloneEnabled}
   <div class="mt-3 p-3 bg-slate-700/50 rounded-md">
     <p class="text-xs text-slate-400 mb-2">{$i18n.t('tts.voiceCloningHint')}</p>
     <div class="flex gap-2 items-center">
@@ -370,6 +388,9 @@
     </div>
     {#if cloneError}<p class="mt-2 text-sm text-red-400">{cloneError}</p>{/if}
   </div>
+{:else}
+  <p class="mt-3 text-xs text-slate-500">{$i18n.t('tts.voiceCloningUnavailable')}</p>
+{/if}
 
   <button on:click={generate} disabled={generating} class="mt-4 w-full flex justify-center items-center py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-md font-medium">
     {#if generating}<Spinner />{:else}{$i18n.t('tts.generate')}{/if}

@@ -30,7 +30,7 @@ let debugLogEnabled = false;
 const logDebug = (message: string, ...args: any[]) => {
     if (debugLogEnabled) console.log(`DEBUG: ${message}`, ...args);
 };
-import { decodeBase64ToBytes, encodeBytesToBase64, generateAudioOpenAIWithBinaryStream, convertToUnifiedPcm, combineAudioBuffersOptimized, getAudioContext } from "@/utils/audio";
+import { decodeBase64ToBytes, encodeBytesToBase64, generateAudioOpenAIWithBinaryStream, convertToUnifiedPcm, combineAudioBuffersOptimized, getAudioContext, OUTPUT_SAMPLE_RATE } from "@/utils/audio";
 
 import { VITE_API_KEY } from '@/config';
 
@@ -799,7 +799,10 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
 
     try {
         // Verwende die neue memory-optimierte Buffer-Kombination
-        const combinedBuffer = await combineAudioBuffersOptimized(audioBuffers, 24000);
+        // Keep the TTS backend's native rate (44.1 kHz, file-based max quality)
+        // instead of forcing 24 kHz: the rate used here becomes the exported
+        // WAV/mp3 sample rate.
+        const combinedBuffer = await combineAudioBuffersOptimized(audioBuffers, OUTPUT_SAMPLE_RATE);
         logDebug(' Audio buffers combined successfully, total samples:', combinedBuffer.length);
 
         // Konvertiere zu WAV mit bestehender Funktion
@@ -890,6 +893,11 @@ function writeString(view: DataView, offset: number, str: string) {
 }
 
 // Hilfsfunktion zur Verarbeitung von PCM Fallback
+//
+// Raw PCM carries no header, so the rate has to be assumed. The TTS backend's
+// streaming PCM contract is 24 kHz (`response_format=pcm` / `/tts`), which is
+// why this stays 24000: the file-based paths (wav/mp3) are 44.1 kHz and go
+// through `convertToUnifiedPcm` with the real rate from their header instead.
 function handlePcmFallback(audioContext: AudioContext, audioBytes: Uint8Array, chunkNumber: number, audioBuffers: AudioBuffer[]) {
     logDebug(` Chunk ${chunkNumber} treated as PCM raw data, audio length: ${audioBytes.length}`);
     
@@ -1139,6 +1147,30 @@ export const mixVoices = async (conf: BackendConfig, voiceA: string, voiceB: str
             throw createCorsError(conf.tts.openAudioUrl);
         }
         throw e;
+    }
+};
+
+/**
+ * Ask the active TTS backend whether it supports reference-WAV voice cloning.
+ *
+ * `/health` advertises `voice_cloning`, so the UI adapts automatically when
+ * the backend on :8800 is swapped (PocketTTS clones, Supertonic does not)
+ * instead of letting the user walk into a 501.
+ * Returns null when the capability cannot be determined.
+ */
+export const detectVoiceCloningSupport = async (conf: BackendConfig): Promise<boolean | null> => {
+    try {
+        const baseUrl = (conf.tts.openAudioUrl || 'http://localhost:8800')
+            .replace(/\/v1\/audio\/speech\/?$/, '')
+            .replace(/\/audio\/speech\/?$/, '')
+            .replace(/\/$/, '');
+        const resp = await fetch(`${baseUrl}/health`, { cache: 'no-store' });
+        if (!resp.ok) return null;
+        const body = await resp.json();
+        return typeof body?.voice_cloning === 'boolean' ? body.voice_cloning : null;
+    } catch (e) {
+        logDebug(' detectVoiceCloningSupport failed:', e);
+        return null;
     }
 };
 

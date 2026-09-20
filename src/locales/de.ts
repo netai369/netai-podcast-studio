@@ -113,6 +113,7 @@ export default {
         preview: "Vorschau",
         delete: "Löschen",
         voiceCloningHint: "Stimmklonen: Referenz-WAV hochladen oder aufnehmen (mono, 24 kHz empfohlen).",
+        voiceCloningUnavailable: "Stimmklonen ist mit dem aktiven TTS-Backend nicht verfügbar.",
         clone: "Klonen",
         record: "Aufnehmen",
         stopRecording: "Aufnahme stoppen",

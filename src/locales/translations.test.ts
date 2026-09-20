@@ -11,6 +11,7 @@ const REQUIRED_TTS_KEYS = [
   'preview',
   'delete',
   'voiceCloningHint',
+  'voiceCloningUnavailable',
   'clone',
   'record',
   'stopRecording',

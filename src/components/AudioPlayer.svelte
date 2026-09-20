@@ -221,7 +221,11 @@
       const blob = await fetch(podcast.audioUrl).then(r => r.blob());
       const arrayBuffer = await blob.arrayBuffer();
       const pcmBytes = new Uint8Array(arrayBuffer.slice(44)); // Strip WAV header
-      const url = await createMp3UrlFromPcmBytes(pcmBytes);
+      // Encode at the WAV's own rate (byte 24, little-endian uint32). The
+      // backend exports 44.1 kHz; encoding that as 24 kHz would play it at
+      // the wrong speed and pitch.
+      const sampleRate = new DataView(arrayBuffer).getUint32(24, true) || 44100;
+      const url = await createMp3UrlFromPcmBytes(pcmBytes, sampleRate);
       mp3Url = url;
 
       const a = document.createElement('a');

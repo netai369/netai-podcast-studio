@@ -40,6 +40,9 @@ export const VITE_LLM_URL = getEnvVar('VITE_LLM_URL', '/cascade');
 export const VITE_LLM_KEY = getEnvVar('VITE_LLM_KEY');
 export const VITE_TTS_PROVIDER = getEnvVar('VITE_TTS_PROVIDER', 'supertonic');
 export const VITE_TTS_URL = getEnvVar('VITE_TTS_URL', '/tts/v1/audio/speech');
+// Build-time fallback for voice-cloning availability; the runtime value from
+// `/config.json` takes precedence (see utils/runtimeConfig.ts).
+export const VITE_TTS_VOICE_CLONING = getEnvVar('VITE_TTS_VOICE_CLONING', 'true');
 
 export const MODE = getEnvVar('NODE_ENV', '') === 'production' || getEnvVar('MODE', '') === 'production' ? 'production' : 'development';
 

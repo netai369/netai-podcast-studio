@@ -289,12 +289,19 @@ export const createMp3UrlFromBase64 = async (base64MP3: string): Promise<string>
     return URL.createObjectURL(mp3Blob);
 };
 
-export const createMp3UrlFromPcmBytes = async (pcmBytes: Uint8Array): Promise<string> => {
+export const createMp3UrlFromPcmBytes = async (
+    pcmBytes: Uint8Array,
+    sampleRate: number = OUTPUT_SAMPLE_RATE,
+    bitrate: number = OUTPUT_MP3_BITRATE,
+): Promise<string> => {
     if (!pcmBytes || pcmBytes.length === 0) throw new Error("Cannot create MP3 from empty audio data.");
     const pcmDataInt16 = new Int16Array(pcmBytes.buffer);
 
+    // Encoding rate must match the source PCM, otherwise the mp3 plays at the
+    // wrong speed/pitch (the WAV header carrying the real rate is stripped by
+    // the caller before this point).
     // @ts-ignore - lamejs from CDN
-    const lameEncoder = new lamejs.Mp3Encoder(1, 24000, 128); // 1 channel, 24000 Hz, 128 kbps
+    const lameEncoder = new lamejs.Mp3Encoder(1, sampleRate, bitrate); // mono
     const sampleBlockSize = 1152;
     const mp3Data = [];
 
@@ -310,10 +317,25 @@ export const createMp3UrlFromPcmBytes = async (pcmBytes: Uint8Array): Promise<st
     return URL.createObjectURL(blob);
 };
 
+/**
+ * Sample rate for generated podcast output.
+ *
+ * The TTS backend serves file-based audio (wav/mp3) at the model's native
+ * 44.1 kHz for maximum quality, and the podcast export must preserve it.
+ *
+ * This matters for `getAudioContext()` too: `decodeAudioData()` ALWAYS
+ * resamples to the AudioContext's rate, so a 24 kHz context silently
+ * downsampled every 44.1 kHz TTS chunk before it was ever combined.
+ */
+export const OUTPUT_SAMPLE_RATE = 44100;
+
+/** Bitrate for the mp3 export (kbps); 192 keeps up with 44.1 kHz speech. */
+export const OUTPUT_MP3_BITRATE = 192;
+
 let audioContext: AudioContext | null = null;
 export function getAudioContext(): AudioContext {
     if (!audioContext || audioContext.state === 'closed') {
-        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: OUTPUT_SAMPLE_RATE });
     }
     return audioContext;
 }
@@ -525,7 +547,9 @@ export async function convertToUnifiedPcm(audioData: Uint8Array, format: 'mp3' |
             return audioBuffer;
             
         case 'pcm':
-            // PCM direkt als AudioBuffer erstellen
+            // PCM direkt als AudioBuffer erstellen. 24 kHz = streaming wire
+            // contract of the TTS backend; wav/mp3 (44.1 kHz) are decoded
+            // above with their real rate from the file header.
             const pcmCtx = getAudioContext();
             const pcmData = new Int16Array(audioData.buffer);
             const frameCount = pcmData.length;
@@ -545,7 +569,7 @@ export async function convertToUnifiedPcm(audioData: Uint8Array, format: 'mp3' |
 }
 
 // Memory-optimierte Audio-Buffer-Kombination
-export async function combineAudioBuffersOptimized(buffers: AudioBuffer[], targetSampleRate: number = 24000): Promise<AudioBuffer> {
+export async function combineAudioBuffersOptimized(buffers: AudioBuffer[], targetSampleRate: number = OUTPUT_SAMPLE_RATE): Promise<AudioBuffer> {
     console.log('DEBUG: Combining audio buffers, count:', buffers.length, 'target sample rate:', targetSampleRate);
     
     if (buffers.length === 0) {

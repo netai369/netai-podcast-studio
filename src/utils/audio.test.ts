@@ -8,6 +8,9 @@ import {
   computePeaks,
   drawPeaks,
   PeakAccumulator,
+  OUTPUT_SAMPLE_RATE,
+  OUTPUT_MP3_BITRATE,
+  createMp3UrlFromPcmBytes,
 } from './audio';
 
 interface StrokeCall {
@@ -41,6 +44,38 @@ describe('base64 helpers', () => {
 
   it('throws on invalid base64', () => {
     expect(() => decodeBase64ToBytes('!!!not-base64!!!')).toThrow();
+  });
+});
+
+describe('output sample rate policy', () => {
+  // The TTS backend serves file-based audio at 44.1 kHz (native model rate,
+  // maximum quality). The podcast export must not downsample it to 24 kHz;
+  // 24 kHz is the streaming/wire rate for raw PCM only.
+  it('exports generated podcast audio at 44.1 kHz', () => {
+    expect(OUTPUT_SAMPLE_RATE).toBe(44100);
+    expect(OUTPUT_MP3_BITRATE).toBeGreaterThanOrEqual(192);
+  });
+
+  it('encodes the mp3 at the rate it is given, not a hardcoded 24 kHz', async () => {
+    // lamejs is loaded from a CDN in the browser; capture the constructor args.
+    const ctorArgs: number[][] = [];
+    // jsdom lacks createObjectURL; the encoder args are what we assert on.
+    (URL as any).createObjectURL = () => 'blob:mock';
+    (globalThis as any).lamejs = {
+      Mp3Encoder: function (channels: number, rate: number, kbps: number) {
+        ctorArgs.push([channels, rate, kbps]);
+        return {
+          encodeBuffer: () => new Uint8Array(0),
+          flush: () => new Uint8Array(0),
+        };
+      },
+    };
+    const pcm = new Uint8Array(new Int16Array([0, 1, 2, 3]).buffer);
+    await createMp3UrlFromPcmBytes(pcm, 44100);
+    expect(ctorArgs[0][1]).toBe(44100);
+    await createMp3UrlFromPcmBytes(pcm, 24000, 128);
+    expect(ctorArgs[1][1]).toBe(24000);
+    expect(ctorArgs[1][2]).toBe(128);
   });
 });
 
