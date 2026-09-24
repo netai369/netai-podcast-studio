@@ -19,15 +19,35 @@
   let podcastsLoaded = false;
 
   onMount(() => {
-    const saved = localStorage.getItem('podcasts_netai');
-    podcasts = saved ? JSON.parse(saved).map((p: any) => ({...p, createdAt: new Date(p.createdAt)})) : [];
+    let raw: any[] = [];
+    try {
+      const saved = localStorage.getItem('podcasts_netai');
+      raw = saved ? JSON.parse(saved) : [];
+    } catch {
+      raw = [];
+    }
+    // UI-17: legacy entries persisted a blob: URL, which is dead after a
+    // reload. Drop the dead audio reference but keep the metadata (title,
+    // script, speakers) so the podcast can be re-synthesized.
+    podcasts = raw.map((p: any) => ({
+      ...p,
+      createdAt: new Date(p.createdAt),
+      audioUrl: typeof p.audioUrl === 'string' && p.audioUrl.startsWith('blob:')
+        ? ''
+        : p.audioUrl,
+    }));
     podcastsLoaded = true;
   });
 
   // Persist podcasts only after they have been loaded for the current user
   // to avoid overwriting stored data with a stale/empty array during auth changes.
+  // UI-17: never persist a blob: URL (dead after reload) — drop it on save too,
+  // not just on load, so a transient in-memory blob can never reach storage.
   $: if (podcastsLoaded) {
-    localStorage.setItem('podcasts_netai', JSON.stringify(podcasts));
+    localStorage.setItem('podcasts_netai', JSON.stringify(podcasts.map((p: any) => ({
+      ...p,
+      audioUrl: typeof p.audioUrl === 'string' && p.audioUrl.startsWith('blob:') ? '' : p.audioUrl,
+    }))));
   }
   
   function handlePodcastCreated(event: CustomEvent<Podcast>) {

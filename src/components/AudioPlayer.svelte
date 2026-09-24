@@ -41,31 +41,22 @@
 
   async function loadAndDrawWaveform() {
     try {
-      console.log("DEBUG: Loading waveform for URL:", podcast.audioUrl);
-      console.log("DEBUG: Audio URL type:", typeof podcast.audioUrl);
-      console.log("DEBUG: Audio URL protocol:", podcast.audioUrl.startsWith('blob:') ? 'blob' : 'other');
-      
-      // Try to decode the audio data first
+      // NOTE (UI-05): never log the audio URL itself — persisted audio is a
+      // data: URL carrying megabytes of base64 payload.
       const response = await fetch(podcast.audioUrl);
-      console.log("DEBUG: Fetch response status:", response.status, response.statusText);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const arrayBuffer = await response.arrayBuffer();
-      console.log("DEBUG: Array buffer size:", arrayBuffer.byteLength);
       
       audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       
       try {
         audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        console.log("DEBUG: Audio decoded successfully, sample rate:", audioBuffer.sampleRate, "length:", audioBuffer.length);
-        console.log("DEBUG: About to call drawWaveform");
         drawWaveform();
-        console.log("DEBUG: drawWaveform called");
       } catch (decodeError) {
-        console.log("DEBUG: Failed to decode audio, creating placeholder waveform:", decodeError);
         // Create a simple placeholder waveform if decoding fails
         audioBuffer = audioContext.createBuffer(1, audioContext.sampleRate, audioContext.sampleRate);
         drawPlaceholderWaveform();
@@ -87,17 +78,14 @@
 
   function drawWaveform(progress = 0) {
     if (!canvas || !audioBuffer) {
-      console.log("DEBUG: Cannot draw waveform - missing canvas or audioBuffer");
       return;
     }
     const ctx = canvas.getContext('2d');
     if (!ctx) {
-      console.log("DEBUG: Cannot draw waveform - no canvas context");
       return;
     }
 
     const data = audioBuffer.getChannelData(0);
-    console.log("DEBUG: Drawing waveform with data length:", data.length, "progress:", progress);
     
     const { width, height } = canvas;
     const step = Math.ceil(data.length / width);
@@ -140,8 +128,6 @@
         ctx.lineTo(i, amp * (1 + max));
     }
     ctx.stroke();
-    
-    console.log("DEBUG: Waveform drawing completed");
   }
 
   function drawPlaceholderWaveform(progress = 0) {
@@ -277,21 +263,17 @@
       src={podcast.audioUrl}
       on:timeupdate={handleTimeUpdate}
       on:loadedmetadata={() => {
-        console.log("DEBUG: Audio loaded metadata, duration:", audio.duration);
         duration = audio.duration;
       }}
       on:play={() => {
-        console.log("DEBUG: Audio playing");
         isPlaying = true;
       }}
       on:pause={() => {
-        console.log("DEBUG: Audio paused");
         isPlaying = false;
       }}
       on:error={(e) => {
+        // NOTE (UI-05): never log podcast.audioUrl — it is a multi-MB data: URL.
         console.error("DEBUG: Audio error:", e);
-        console.error("DEBUG: Audio src:", podcast.audioUrl);
-        console.error("DEBUG: Audio error target:", e.target);
       }}
       controls
       class="w-full mb-4"

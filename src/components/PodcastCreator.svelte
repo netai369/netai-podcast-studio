@@ -253,7 +253,7 @@
         title: draft.title,
         description: draft.description,
         script: draft.script,
-        audioUrl: audioB64, // audioB64 ist bereits die Blob-URL
+        audioUrl: audioB64, // data:-URL (UI-17: nie blob: persistieren — tot nach Reload)
         createdAt: new Date(),
         topic,
         duration: duration === 0 ? customDuration : duration,

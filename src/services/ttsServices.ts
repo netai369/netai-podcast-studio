@@ -30,9 +30,16 @@ let debugLogEnabled = false;
 const logDebug = (message: string, ...args: any[]) => {
     if (debugLogEnabled) console.log(`DEBUG: ${message}`, ...args);
 };
-import { decodeBase64ToBytes, encodeBytesToBase64, generateAudioOpenAIWithBinaryStream, convertToUnifiedPcm, combineAudioBuffersOptimized, getAudioContext, OUTPUT_SAMPLE_RATE } from "@/utils/audio";
+import { decodeBase64ToBytes, encodeBytesToBase64, blobToDataUrl, generateAudioOpenAIWithBinaryStream, convertToUnifiedPcm, combineAudioBuffersOptimized, getAudioContext, OUTPUT_SAMPLE_RATE } from "@/utils/audio";
 
 import { VITE_API_KEY } from '@/config';
+
+// UI-05: never log the full backend config — it carries the in-memory API
+// key. Debug output gets a redacted copy.
+const sanitizeConfig = (conf: BackendConfig): BackendConfig => ({
+    ...conf,
+    llm: { ...conf.llm, openAiKey: conf.llm.openAiKey ? '***redacted***' : '' },
+});
 
 const ai = new GoogleGenAI({ apiKey: VITE_API_KEY });
 
@@ -104,7 +111,7 @@ export async function* generatePodcastScriptStream(d: Document[], t: string, dur
     const fullLanguageName = getLanguageName(l);
     const prompt = getScriptGenerationPrompt(d.flatMap(chunkDocument), t, dur, s, spk, fullLanguageName, n);
     logger.debug('generatePodcastScriptStream called with:', { documents: d.length, topic: t, duration: dur, style: s, speakers: spk, language: l, narration: n, provider: conf.llm.provider });
-    logger.debug('Full config:', conf);
+    logger.debug('Full config (key redacted):', sanitizeConfig(conf));
     const openaiCompatibleProviders = ['openai', 'cerebras', 'mistral', 'xai', 'openrouter'];
     const claudeCompatibleProviders = ['claude'];
     
@@ -822,13 +829,12 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
         
         logDebug(' WAV file validation passed');
         
-        // Erstelle eine Blob-URL mit korrektem MIME-Typ für bessere Wiedergabe-Unterstützung
+        // Erstelle eine persistierbare data:-URL statt einer blob:-URL, die
+        // nach einem Reload tot wäre (UI-17).
         const wavBlob = new Blob([wavBytes.buffer as ArrayBuffer], { type: 'audio/wav' });
-        const audioUrl = URL.createObjectURL(wavBlob);
-        
-        logDebug(' Created audio URL:', audioUrl);
-        logDebug(' Blob URL protocol:', audioUrl.startsWith('blob:') ? 'blob' : 'other');
-        logDebug(' Blob size:', wavBlob.size);
+        const audioUrl = await blobToDataUrl(wavBlob);
+
+        logDebug(' Created audio data URL, bytes:', wavBlob.size);
         
         onProgress(100);
         return audioUrl;
@@ -963,7 +969,7 @@ export const generateVoicePreviewAudio = async (voice: string, conf: BackendConf
 
 export const fetchAvailableVoices = async (conf: BackendConfig): Promise<{ id: string; name: string; gender: 'M' | 'F'; label: string }[]> => {
     logDebug(' fetchAvailableVoices called with provider:', conf.tts.provider);
-    logDebug(' Full config:', conf);
+    logDebug(' Full config (key redacted):', sanitizeConfig(conf));
     
     if (conf.tts.provider === 'openai' && conf.tts.openAudioUrl) {
         try {
@@ -1204,5 +1210,5 @@ export const previewVoice = async (conf: BackendConfig, voiceId: string): Promis
         throw new Error(`Preview failed: ${resp.status} ${txt}`);
     }
     const blob = await resp.blob();
-    return URL.createObjectURL(blob);
+    return blobToDataUrl(blob);
 };

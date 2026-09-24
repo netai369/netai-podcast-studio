@@ -3,14 +3,37 @@ import type { BackendConfig, Language } from '@/types';
 import { translations } from '@/locales/translations';
 
 // --- Helper Functions ---
+// UI-05: provider secrets (API keys) must never touch localStorage — XSS or a
+// shared machine would exfiltrate them. They live in memory only (per page
+// load); everything else persists as before.
+const MEMORY_ONLY_SECRETS = ['openAiKey'] as const;
+
+function stripSecrets<T>(val: T): T {
+  if (val === null || typeof val !== 'object') return val;
+  const strip = (obj: any) => {
+    if (obj === null || typeof obj !== 'object') return;
+    for (const k of MEMORY_ONLY_SECRETS) {
+      if (k in obj) obj[k] = '';
+    }
+    for (const v of Object.values(obj)) {
+      if (v !== null && typeof v === 'object') strip(v);
+    }
+  };
+  const copy = JSON.parse(JSON.stringify(val));
+  strip(copy);
+  return copy;
+}
+
 function createPersistentStore<T>(key: string, startValue: T) {
   const isBrowser = typeof window !== 'undefined';
   const storedValue = isBrowser ? localStorage.getItem(key) : null;
-  const store = writable<T>(storedValue ? JSON.parse(storedValue) : startValue);
+  const parsed = storedValue ? stripSecrets<T>(JSON.parse(storedValue)) : startValue;
+
+  const store = writable<T>(parsed);
 
   store.subscribe(val => {
     if (isBrowser) {
-      localStorage.setItem(key, JSON.stringify(val));
+      localStorage.setItem(key, JSON.stringify(stripSecrets(val)));
     }
   });
 
@@ -31,10 +54,8 @@ settingsStore.update(settings => ({
     debug: settings.debug || { logLevel: 'INFO' }
 }));
 
-// Debug: Log settings changes
-settingsStore.subscribe(settings => {
-    console.log('DEBUG: Settings changed:', settings);
-});
+// NOTE: no settings-change logging here — the settings object carries the
+// in-memory API key and must never be written to the console (UI-05).
 
 // --- i18n Store ---
 const createI18nStore = () => {

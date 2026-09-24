@@ -27,6 +27,18 @@ export function encodeBytesToBase64(bytes: Uint8Array): string {
     return btoa(binary);
 }
 
+// UI-17: blob: URLs die with the page, so generated audio is persisted as a
+// data: URL instead. Data URLs survive reload and work directly as <audio>
+// src and fetch() targets.
+export function blobToDataUrl(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error || new Error('Failed to read blob'));
+        reader.readAsDataURL(blob);
+    });
+}
+
 export function createWavBytes(pcmData: Int16Array, sampleRate: number, numChannels: number): Uint8Array<ArrayBuffer> {
     const bitsPerSample = 16;
     const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
@@ -235,7 +247,7 @@ export class PeakAccumulator {
   }
 }
 
-/** Decode any browser-playable audio URL (blob: or http) to mono Float32. */
+/** Decode any browser-playable audio URL (data:, blob: or http) to mono Float32. */
 export async function decodeAudioSamples(url: string): Promise<Float32Array> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Failed to fetch audio: ${response.status}`);
