@@ -17,9 +17,6 @@ export default defineConfig({
       '@': path.resolve(path.dirname(fileURLToPath(import.meta.url)), './src'),
     },
   },
-  define: {
-    'process.env': process.env
-  },
   server: {
     // Listen on all addresses (useful for Docker / proxies)
     host: true
@@ -29,7 +26,6 @@ export default defineConfig({
   // Configure module resolution
   optimizeDeps: {
     include: [
-      '@google/genai',
       'mammoth',
       'jszip',
       'pdfjs-dist',

@@ -1,5 +1,4 @@
 /// <reference types="vite/client" />
-import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { EdgeTTS, listVoices } from 'edge-tts-universal/browser';
 import type { Document, PodcastStyle, SpeakerConfig, BackendConfig, PodcastNarrationStyle, AvailableModels } from "@/types";
 import { chunkDocument, chunkScriptForTTS, chunkScriptBySpeakerTurns, validateChunkTokens } from "@/utils/text";
@@ -32,16 +31,12 @@ const logDebug = (message: string, ...args: any[]) => {
 };
 import { decodeBase64ToBytes, encodeBytesToBase64, blobToDataUrl, generateAudioOpenAIWithBinaryStream, convertToUnifiedPcm, combineAudioBuffersOptimized, getAudioContext, OUTPUT_SAMPLE_RATE } from "@/utils/audio";
 
-import { VITE_API_KEY } from '@/config';
-
 // UI-05: never log the full backend config — it carries the in-memory API
 // key. Debug output gets a redacted copy.
 const sanitizeConfig = (conf: BackendConfig): BackendConfig => ({
     ...conf,
     llm: { ...conf.llm, openAiKey: conf.llm.openAiKey ? '***redacted***' : '' },
 });
-
-const ai = new GoogleGenAI({ apiKey: VITE_API_KEY });
 
 const createCorsError = (url: string) => {
     return new Error(`A network error occurred, which is often due to a CORS issue. Please ensure your custom API server at "${url}" is configured to allow requests from this application's origin. Check the browser's developer console for more details.`);
@@ -112,10 +107,12 @@ export async function* generatePodcastScriptStream(d: Document[], t: string, dur
     const prompt = getScriptGenerationPrompt(d.flatMap(chunkDocument), t, dur, s, spk, fullLanguageName, n);
     logger.debug('generatePodcastScriptStream called with:', { documents: d.length, topic: t, duration: dur, style: s, speakers: spk, language: l, narration: n, provider: conf.llm.provider });
     logger.debug('Full config (key redacted):', sanitizeConfig(conf));
-    const openaiCompatibleProviders = ['openai', 'cerebras', 'mistral', 'xai', 'openrouter'];
     const claudeCompatibleProviders = ['claude'];
-    
-    if ((openaiCompatibleProviders.includes(conf.llm.provider) || claudeCompatibleProviders.includes(conf.llm.provider)) && conf.llm.openAiUrl) {
+
+    // AUD-204: every provider goes through the same-origin proxy
+    // (/cascade). There is no direct GoogleGenAI client in the bundle, so no
+    // VITE_API_KEY reaches the browser.
+    if (conf.llm.openAiUrl) {
         logDebug(' Using OpenAI compatible provider:', conf.llm.provider, 'URL:', conf.llm.openAiUrl);
         try {
             let requestBody;
@@ -226,21 +223,7 @@ export async function* generatePodcastScriptStream(d: Document[], t: string, dur
             throw e;
         }
     } else {
-        logDebug(' Using Gemini provider');
-        const model = conf.llm.model || 'gemini-2.0-flash-exp';
-        logDebug(' Using Gemini model:', model);
-        try {
-            const responseStream = await ai.models.generateContentStream({ model: model, contents: [{parts: [{text: prompt}]}], config: { temperature: 0.7 } });
-            logDebug(' Gemini stream started');
-            for await (const chunk of responseStream) {
-                const text = chunk.text || '';
-                if (text) logDebug(' Yielding Gemini content:', text.substring(0, 100) + '...');
-                yield text;
-            }
-            logDebug(' Gemini stream ended');
-        } catch (e) {
-            throw new Error(`Gemini script generation failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
-        }
+        throw new Error('LLM URL missing: configure the same-origin proxy (VITE_LLM_URL, default /cascade)');
     }
 }
 
@@ -249,10 +232,9 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
     validateScript(script);
     const prompt = `Based on this podcast script, generate a concise, catchy title and a one-paragraph description in ${language}. Return ONLY a JSON object with keys "title" and "description". Do not include any other text or formatting.\n\nScript:\n---\n${script.substring(0, 8000)}...`;
     logDebug(' generatePodcastMetadata called with provider:', conf.llm.provider);
-    const openaiCompatibleProviders = ['openai', 'cerebras', 'mistral', 'xai', 'openrouter'];
     const claudeCompatibleProviders = ['claude'];
-    
-    if ((openaiCompatibleProviders.includes(conf.llm.provider) || claudeCompatibleProviders.includes(conf.llm.provider)) && conf.llm.openAiUrl) {
+
+    if (conf.llm.openAiUrl) {
         logDebug(' Using OpenAI compatible provider for metadata:', conf.llm.provider, 'URL:', conf.llm.openAiUrl);
         try {
             let requestBody;
@@ -381,40 +363,7 @@ export const generatePodcastMetadata = async (script: string, conf: BackendConfi
             throw e;
         }
     } else {
-        logDebug(' Using Gemini for metadata');
-        const model = conf.llm.model || 'gemini-2.0-flash-exp';
-        logDebug(' Using Gemini model for metadata:', model);
-        let response;
-        try {
-            response = await ai.models.generateContent({
-                model: model,
-                contents: [{parts: [{text: prompt}]}],
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: Type.OBJECT,
-                        properties: {
-                            title: { type: Type.STRING },
-                            description: { type: Type.STRING }
-                        },
-                        required: ["title", "description"]
-                    }
-                }
-            });
-        } catch (e) {
-            throw new Error(`Gemini metadata generation failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
-        }
-        logDebug(' Gemini metadata response:', response);
-        try {
-            const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-            logDebug(' Gemini metadata text:', text);
-            const result = JSON.parse(text);
-            logDebug(' Parsed Gemini metadata result:', result);
-            return result;
-        } catch (e) {
-            console.error("Failed to parse JSON metadata from Gemini", { error: e, response: response.candidates?.[0]?.content?.parts?.[0]?.text });
-            return { title: 'Untitled Podcast', description: 'Could not generate description.' };
-        }
+        throw new Error('LLM URL missing: configure the same-origin proxy (VITE_LLM_URL, default /cascade)');
     }
 };
 
@@ -509,32 +458,6 @@ const getEffectiveVoice = (spk: SpeakerConfig): string => {
         return spk.voice;
     }
     return 'Puck';
-};
-
-const generateAudioGemini = async (text: string, style: PodcastNarrationStyle, voice: string): Promise<string> => {
-    logDebug(' generateAudioGemini called with:', { textLength: text.length, style, voice });
-    const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `In a ${style} tone, say: ${text}` }] }],
-        config: { responseModalities: [Modality.AUDIO], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } }
-    });
-    const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
-    logDebug(' generateAudioGemini response:', { hasAudioData: !!audioData, dataLength: audioData.length });
-    return audioData;
-};
-
-const generateAudioGeminiConversation = async (text: string, speakers: SpeakerConfig[], style: PodcastNarrationStyle): Promise<string> => {
-    logDebug(' generateAudioGeminiConversation called with:', { textLength: text.length, speakers: speakers.map(s => ({ name: s.name, voice: getEffectiveVoice(s) })), style });
-    const speakerVoiceConfigs = speakers.slice(0, 2).map(s => ({ speaker: s.name, voiceConfig: { prebuiltVoiceConfig: { voiceName: getEffectiveVoice(s) } } }));
-    logDebug(' Speaker voice configs:', speakerVoiceConfigs);
-    const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `In a ${style} style, TTS the following conversation: ${text}` }] }],
-        config: { responseModalities: [Modality.AUDIO], speechConfig: { multiSpeakerVoiceConfig: { speakerVoiceConfigs } } }
-    });
-    const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
-    logDebug(' generateAudioGeminiConversation response:', { hasAudioData: !!audioData, dataLength: audioData.length });
-    return audioData;
 };
 
 const generateAudioCustom = async (url: string, text: string, speaker: string, lang?: string): Promise<string> => {
@@ -636,14 +559,22 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
 
         try {
             if (conf.tts.provider === 'gemini') {
-                logDebug(' Using Gemini TTS');
-                isCompressedFormat = false; // Gemini gibt PCM zurück
-                if (style === 'solo') {
-                    audioB64 = await generateAudioGemini(chunk.replace(`${speakers[0].name}:`, '').trim(), n, getEffectiveVoice(speakers[0]));
-                } else {
-                    audioB64 = await generateAudioGeminiConversation(chunk, speakers, n);
-                }
-             } else if (conf.tts.provider === 'openai' && conf.tts.openAudioUrl) {
+                // AUD-204: no direct GoogleGenAI client — Gemini-labelled
+                // configs use the same-origin TTS proxy (PocketTTS/OpenAI
+                // compatible) instead.
+                logDebug(' Using same-origin TTS proxy for Gemini provider');
+                const url = conf.tts.openAudioUrl || '/tts/v1/audio/speech';
+                const potentialSpeakerName = chunk.match(/^([^:]+):/)?.[1];
+                const isValidNameLength = potentialSpeakerName && potentialSpeakerName.length < 50;
+                const matchedSpeaker = (isValidNameLength && potentialSpeakerName) ? speakers.find(s => s.name === potentialSpeakerName) : undefined;
+                const speaker = matchedSpeaker || speakers[0];
+                const text = matchedSpeaker ? chunk.replace(/^[^:]+:\s*/, '') : chunk;
+                const result = await generateAudioOpenAIWithBinaryStream(
+                    url, text, speaker.voice || 'alloy', true, effectiveLang, 'supertonic', ttsModel,
+                );
+                audioB64 = result.data;
+                isCompressedFormat = result.format === 'mp3';
+            } else if (conf.tts.provider === 'openai' && conf.tts.openAudioUrl) {
                 logDebug(' Using OpenAI TTS provider with binary stream support');
                 const potentialSpeakerName = chunk.match(/^([^:]+):/)?.[1];
                 // Begrenze die Länge des potentiellen Sprechernamens, um False Positives bei langen Sätzen mit Doppelpunkt zu vermeiden
@@ -739,7 +670,7 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
                 let detectedFormat: 'mp3' | 'wav' | 'pcm' = 'pcm';
                 
                 if (conf.tts.provider === 'gemini') {
-                    detectedFormat = 'pcm'; // Gemini gibt immer PCM zurück
+                    detectedFormat = isCompressedFormat ? 'mp3' : 'wav';
                 } else if (conf.tts.provider === 'openai') {
                     detectedFormat = isCompressedFormat ? 'mp3' : 'wav';
                 } else if (conf.tts.provider === 'openaudio-s1') {
@@ -937,11 +868,14 @@ export const generateVoicePreviewAudio = async (voice: string, conf: BackendConf
     const previewText = getVoicePreviewText(language);
     
     if (conf.tts.provider === 'gemini') {
-        if (!voice) throw new Error("Voice name required.");
-        logDebug(' Generating voice preview for Gemini');
-        const result = await generateAudioGemini(previewText, 'professional', voice);
-        logDebug(' Voice preview generated, length:', result.length);
-        return result;
+        logDebug(' Generating voice preview via same-origin TTS proxy');
+        const url = conf.tts.openAudioUrl || '/tts/v1/audio/speech';
+        const result = await generateAudioOpenAIWithBinaryStream(
+            url, previewText, voice, true, language, 'supertonic',
+            getTtsModelForLanguage(language) ?? conf.tts.model,
+        );
+        logDebug(' Voice preview generated, length:', result.data.length);
+        return result.data;
     }
     const previewModel = getTtsModelForLanguage(language) ?? conf.tts.model;
     if (conf.tts.provider === 'openai' && conf.tts.openAudioUrl) {
