@@ -2,7 +2,7 @@
 import { EdgeTTS, listVoices } from 'edge-tts-universal/browser';
 import type { Document, PodcastStyle, SpeakerConfig, BackendConfig, PodcastNarrationStyle, AvailableModels } from "@/types";
 import { chunkDocument, chunkScriptForTTS, chunkScriptBySpeakerTurns, validateChunkTokens } from "@/utils/text";
-import { getVoicePreviewText, VOICES_BY_LANGUAGE, CUSTOM_VOICE_ID, getLanguageName, getTtsModelForLanguage } from "@/constants";
+import { getVoicePreviewText, VOICES_BY_LANGUAGE, CUSTOM_VOICE_ID, getLanguageName, getTtsModelForLanguage, resolveTtsModelForEngine, type TtsEngine } from "@/constants";
 import type { LogLevel } from "@/types";
 
 // Logger utility
@@ -534,10 +534,8 @@ export const generatePodcastAudio = async (script: string, style: PodcastStyle, 
     logDebug(' Chunking method:', style === 'conversation' ? 'by speaker turns' : 'by length');
     
     const effectiveLang = lang || conf.tts.language || 'en';
-    // PocketTTS bundles are language-specific; never send a model that
-    // conflicts with the chosen language (a persisted de_6l would force the
-    // German voice onto English/French/Italian text).
-    const ttsModel = getTtsModelForLanguage(effectiveLang) ?? conf.tts.model;
+    const caps = await detectTtsCapabilities(conf);
+    const ttsModel = resolveTtsModelForEngine(caps?.engine, effectiveLang, conf.tts.model);
 
     // Validiere die Token-Anzahl jedes Chunks
     const tokenValidation = validateChunkTokens(chunks);
@@ -866,18 +864,18 @@ function handlePcmFallback(audioContext: AudioContext, audioBytes: Uint8Array, c
 export const generateVoicePreviewAudio = async (voice: string, conf: BackendConfig, language: string = 'en'): Promise<string> => {
     logDebug(' generateVoicePreviewAudio called with:', { voice, provider: conf.tts.provider, language });
     const previewText = getVoicePreviewText(language);
-    
+    const caps = await detectTtsCapabilities(conf);
+    const previewModel = resolveTtsModelForEngine(caps?.engine, language, conf.tts.model);
+
     if (conf.tts.provider === 'gemini') {
         logDebug(' Generating voice preview via same-origin TTS proxy');
         const url = conf.tts.openAudioUrl || '/tts/v1/audio/speech';
         const result = await generateAudioOpenAIWithBinaryStream(
-            url, previewText, voice, true, language, 'supertonic',
-            getTtsModelForLanguage(language) ?? conf.tts.model,
+            url, previewText, voice, true, language, 'supertonic', previewModel,
         );
         logDebug(' Voice preview generated, length:', result.data.length);
         return result.data;
     }
-    const previewModel = getTtsModelForLanguage(language) ?? conf.tts.model;
     if (conf.tts.provider === 'openai' && conf.tts.openAudioUrl) {
             logDebug(' Generating voice preview for OpenAI');
             // Use binary stream for OpenAI preview as well, pass language
@@ -1090,35 +1088,107 @@ export const mixVoices = async (conf: BackendConfig, voiceA: string, voiceB: str
     }
 };
 
+export interface TtsCapabilities {
+    engine: TtsEngine;
+    backend: string;
+    languages: string[];
+    multilingual: boolean;
+    totalLanguages: number;
+    voiceCloning: boolean | null;
+    streaming: boolean;
+    defaultLang: string;
+}
+
+const CAPS_CACHE_TTL_MS = 30_000;
+const ttsCapsCache = new Map<string, { at: number; data: TtsCapabilities | null }>();
+
+const normalizeTtsBaseUrl = (conf: BackendConfig): string => {
+    return (conf.tts.openAudioUrl || 'http://localhost:8800')
+        .replace(/\/v1\/audio\/speech\/?$/, '')
+        .replace(/\/audio\/speech\/?$/, '')
+        .replace(/\/$/, '');
+};
+
+const inferEngine = (body: any): TtsEngine => {
+    const raw = String(body?.engine || '').trim().toLowerCase();
+    if (raw === 'omnivoice' || raw === 'pocket-tts' || raw === 'supertonic3') {
+        return raw;
+    }
+    const backend = String(body?.backend || '').toLowerCase();
+    if (backend.includes('omnivoice')) return 'omnivoice';
+    if (backend.includes('supertonic') || backend.includes('sherpa')) return 'supertonic3';
+    if (backend === 'onnx' || backend === 'cpp') return 'pocket-tts';
+    return 'unknown';
+};
+
 /**
- * Ask the active TTS backend whether it supports reference-WAV voice cloning.
- *
- * `/health` advertises `voice_cloning`, so the UI adapts automatically when
- * the backend on :8800 is swapped (PocketTTS clones, Supertonic does not)
- * instead of letting the user walk into a 501.
- * Returns null when the capability cannot be determined.
+ * Probe the active TTS backend `/health` endpoint for engine + language +
+ * cloning capabilities (cached 30 s per base URL, fail-soft to null).
  */
-export const detectVoiceCloningSupport = async (conf: BackendConfig): Promise<boolean | null> => {
+export const detectTtsCapabilities = async (
+    conf: BackendConfig,
+    force = false,
+): Promise<TtsCapabilities | null> => {
+    const baseUrl = normalizeTtsBaseUrl(conf);
+    const now = Date.now();
+    const cached = ttsCapsCache.get(baseUrl);
+    if (!force && cached && (now - cached.at) < CAPS_CACHE_TTL_MS) {
+        return cached.data;
+    }
+
     try {
-        const baseUrl = (conf.tts.openAudioUrl || 'http://localhost:8800')
-            .replace(/\/v1\/audio\/speech\/?$/, '')
-            .replace(/\/audio\/speech\/?$/, '')
-            .replace(/\/$/, '');
         const resp = await fetch(`${baseUrl}/health`, { cache: 'no-store' });
-        if (!resp.ok) return null;
+        if (!resp.ok) {
+            ttsCapsCache.set(baseUrl, { at: now, data: null });
+            return null;
+        }
         const body = await resp.json();
-        return typeof body?.voice_cloning === 'boolean' ? body.voice_cloning : null;
+        const engine = inferEngine(body);
+        const bundleLangs = Array.isArray(body?.bundles)
+            ? Array.from(new Set(
+                body.bundles
+                    .map((b: any) => b?.language)
+                    .filter((l: any): l is string => typeof l === 'string' && l !== 'multilingual')
+              ))
+            : [];
+        const languages: string[] = Array.isArray(body?.languages) && body.languages.length > 0
+            ? body.languages.map(String)
+            : bundleLangs;
+        const multilingual = typeof body?.multilingual === 'boolean'
+            ? body.multilingual
+            : engine === 'omnivoice';
+        const caps: TtsCapabilities = {
+            engine,
+            backend: String(body?.backend || engine),
+            languages,
+            multilingual,
+            totalLanguages: Number(body?.total_languages || languages.length || 0),
+            voiceCloning: typeof body?.voice_cloning === 'boolean' ? body.voice_cloning : null,
+            streaming: typeof body?.streaming === 'boolean' ? body.streaming : true,
+            defaultLang: String(body?.default_lang || languages[0] || 'de'),
+        };
+        ttsCapsCache.set(baseUrl, { at: now, data: caps });
+        return caps;
     } catch (e) {
-        logDebug(' detectVoiceCloningSupport failed:', e);
+        logDebug(' detectTtsCapabilities failed:', e);
+        ttsCapsCache.set(baseUrl, { at: now, data: null });
         return null;
     }
+};
+
+/**
+ * Ask the active TTS backend whether it supports reference-WAV voice cloning.
+ */
+export const detectVoiceCloningSupport = async (conf: BackendConfig): Promise<boolean | null> => {
+    const caps = await detectTtsCapabilities(conf);
+    return caps ? caps.voiceCloning : null;
 };
 
 export const deleteVoice = async (conf: BackendConfig, voiceId: string): Promise<void> => {
     if (!voiceId.startsWith('cloned_')) {
         throw new Error('Only cloned voices can be deleted.');
     }
-    const baseUrl = (conf.tts.openAudioUrl || 'http://localhost:8800').replace(/\/v1\/audio\/speech$/, '');
+    const baseUrl = normalizeTtsBaseUrl(conf);
     const resp = await fetch(`${baseUrl}/v1/voices/${encodeURIComponent(voiceId)}`, {
         method: 'DELETE',
     });
@@ -1129,12 +1199,14 @@ export const deleteVoice = async (conf: BackendConfig, voiceId: string): Promise
 };
 
 export const previewVoice = async (conf: BackendConfig, voiceId: string): Promise<string> => {
-    const baseUrl = (conf.tts.openAudioUrl || 'http://localhost:8800').replace(/\/v1\/audio\/speech$/, '');
+    const baseUrl = normalizeTtsBaseUrl(conf);
+    const caps = await detectTtsCapabilities(conf);
+    const model = resolveTtsModelForEngine(caps?.engine, caps?.defaultLang || conf.tts.language, 'pocket-tts') || 'pocket-tts';
     const resp = await fetch(`${baseUrl}/v1/audio/speech`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            model: 'pocket-tts',
+            model,
             input: 'Hello, this is a preview of your cloned voice.',
             voice: voiceId,
         }),

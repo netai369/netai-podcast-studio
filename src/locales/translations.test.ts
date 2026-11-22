@@ -39,7 +39,24 @@ function get(obj: unknown, path: string): unknown {
   return path.split('.').reduce<any>((acc, key) => (acc == null ? acc : acc[key]), obj);
 }
 
-const LOCALES = ['en', 'de', 'es', 'fr', 'it'];
+const LOCALES = ['en', 'de', 'es', 'zh', 'ru', 'fr', 'it'];
+
+function flattenLeafStrings(obj: Record<string, any>, prefix = ''): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj || {})) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      Object.assign(out, flattenLeafStrings(v, path));
+    } else {
+      out[path] = String(v ?? '');
+    }
+  }
+  return out;
+}
+
+function placeholders(text: string): string[] {
+  return [...text.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort();
+}
 
 describe('locale translations', () => {
   it('ships all supported languages', () => {
@@ -56,10 +73,10 @@ describe('locale translations', () => {
 
   it('actually translates the Quick TTS title (no English fallback)', () => {
     const enTitle = get(translations.en, 'tts.title');
-    const distinct = ['de', 'es', 'fr', 'it'].filter(
+    const distinct = ['de', 'es', 'zh', 'ru', 'fr', 'it'].filter(
       (lang) => get(translations[lang], 'tts.title') !== enTitle
     );
-    expect(distinct).toHaveLength(4);
+    expect(distinct).toHaveLength(6);
   });
 
   it('keeps the micError placeholders intact', () => {
@@ -67,6 +84,22 @@ describe('locale translations', () => {
       const value = get(translations[lang], 'tts.errors.micError') as string;
       expect(value).toContain('{{name}}');
       expect(value).toContain('{{message}}');
+    }
+  });
+
+  it.each(LOCALES.filter((l) => l !== 'en'))('%s matches full en key tree and placeholders', (lang) => {
+    const base = flattenLeafStrings(translations.en);
+    const cur = flattenLeafStrings(translations[lang]);
+    expect(Object.keys(cur).sort()).toEqual(Object.keys(base).sort());
+    for (const [k, enVal] of Object.entries(base)) {
+      if (cur[k].trim().length === 0) {
+        throw new Error(`${lang}:${k} is empty`);
+      }
+      const curPh = placeholders(cur[k]);
+      const enPh = placeholders(enVal);
+      if (JSON.stringify(curPh) !== JSON.stringify(enPh)) {
+        throw new Error(`${lang}:${k} placeholder mismatch: ${JSON.stringify(curPh)} vs ${JSON.stringify(enPh)}`);
+      }
     }
   });
 });

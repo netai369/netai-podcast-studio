@@ -13,6 +13,13 @@ export const VOICE_PREVIEW_TEXT: Record<string, string> = {
     zh: "你好，这是我的声音预览。",
     pt: "Olá, esta é uma prévia da minha voz.",
     tr: "Merhaba, bu sesimin bir önizlemesidir.",
+    sv: "Hej, det här är en förhandsvisning av min röst.",
+    sl: "Pozdravljeni, to je predogled mojega glasu.",
+    hu: "Helló, ez a hangom előnézete.",
+    fi: "Hei, tämä on esikatselu äänestäni.",
+    da: "Hej, dette er en forhåndsvisning af min stemme.",
+    ko: "안녕하세요, 제 목소리 미리 듣기입니다.",
+    hi: "नमस्ते, यह मेरी आवाज़ का पूर्वावलोकन है।",
 };
 
 export const getVoicePreviewText = (lang: string): string => {
@@ -25,6 +32,8 @@ export const LANGUAGES: { code: Language, name: string }[] = [
     { code: 'en', name: 'English' },
     { code: 'de', name: 'German' },
     { code: 'es', name: 'Spanish' },
+    { code: 'zh', name: 'Chinese' },
+    { code: 'ru', name: 'Russian' },
     { code: 'fr', name: 'French' },
     { code: 'it', name: 'Italian' },
     { code: 'nl', name: 'Dutch' },
@@ -40,6 +49,11 @@ export const LANGUAGES: { code: Language, name: string }[] = [
     { code: 'ro', name: 'Romanian' },
     { code: 'el', name: 'Greek' },
     { code: 'tr', name: 'Turkish' },
+    { code: 'pt', name: 'Portuguese' },
+    { code: 'ko', name: 'Korean' },
+    { code: 'hi', name: 'Hindi' },
+    { code: 'da', name: 'Danish' },
+    { code: 'fi', name: 'Finnish' },
 ];
 
 export const getLanguageName = (code: string): string => {
@@ -122,6 +136,13 @@ export const VOICES_BY_LANGUAGE: Record<string, { name: string; gender: 'M' | 'F
     ro: VOICES_BY_LANGUAGE_FALLBACK,
     el: VOICES_BY_LANGUAGE_FALLBACK,
     tr: VOICES_BY_LANGUAGE_FALLBACK,
+    zh: VOICES_BY_LANGUAGE_FALLBACK,
+    ru: VOICES_BY_LANGUAGE_FALLBACK,
+    pt: VOICES_BY_LANGUAGE_FALLBACK,
+    ko: VOICES_BY_LANGUAGE_FALLBACK,
+    hi: VOICES_BY_LANGUAGE_FALLBACK,
+    da: VOICES_BY_LANGUAGE_FALLBACK,
+    fi: VOICES_BY_LANGUAGE_FALLBACK,
 };
 
 // PocketTTS models are language bundles. The backend resolves the bundle from
@@ -134,9 +155,22 @@ export const TTS_MODEL_BY_LANGUAGE: Record<string, string> = {
     it: 'it_6l',
 };
 
+export type TtsEngine = 'omnivoice' | 'pocket-tts' | 'supertonic3' | 'unknown';
+
 export const getTtsModelForLanguage = (lang: string | undefined | null): string | undefined => {
     if (!lang) return undefined;
     return TTS_MODEL_BY_LANGUAGE[lang.split(/[-_]/)[0].toLowerCase()];
+};
+
+export const resolveTtsModelForEngine = (
+    engine: TtsEngine | undefined | null,
+    lang: string | undefined | null,
+    fallbackModel?: string,
+): string | undefined => {
+    const short = lang ? lang.split(/[-_]/)[0].toLowerCase() : '';
+    if (engine === 'omnivoice') return 'omnivoice';
+    if (engine === 'supertonic3') return short ? `supertonic-3-${short}` : 'supertonic-3';
+    return getTtsModelForLanguage(lang) ?? fallbackModel;
 };
 
 export const DEFAULT_NAMES_BY_LANGUAGE: Record<string, { M: string[], F: string[] }> = {
@@ -158,12 +192,19 @@ export const DEFAULT_NAMES_BY_LANGUAGE: Record<string, { M: string[], F: string[
     ro: { M: ['Andrei', 'Ion'], F: ['Maria', 'Elena'] },
     el: { M: ['Giorgos', 'Dimitris'], F: ['Maria', 'Eleni'] },
     tr: { M: ['Mehmet', 'Ali'], F: ['Ayşe', 'Fatma'] },
+    zh: { M: ['Wei', 'Hao'], F: ['Lin', 'Mei'] },
+    ru: { M: ['Alexei', 'Dmitry'], F: ['Elena', 'Natalia'] },
+    pt: { M: ['João', 'Pedro'], F: ['Maria', 'Ana'] },
+    ko: { M: ['Minjun', 'Joon'], F: ['Soyeon', 'Jisoo'] },
+    hi: { M: ['Aarav', 'Rohan'], F: ['Ananya', 'Priya'] },
+    da: { M: ['Mikkel', 'Lukas'], F: ['Emma', 'Sofie'] },
+    fi: { M: ['Mikko', 'Juha'], F: ['Aino', 'Sari'] },
 };
 
 export const getInitialSpeakers = (language: string): SpeakerConfig[] => {
     const langKey = language in VOICES_BY_LANGUAGE ? language : 'en';
     const availableVoices = VOICES_BY_LANGUAGE[langKey];
-    const names = DEFAULT_NAMES_BY_LANGUAGE[langKey];
+    const names = DEFAULT_NAMES_BY_LANGUAGE[langKey] || DEFAULT_NAMES_BY_LANGUAGE['en'];
 
     const speaker1Voice = availableVoices.find(v => v.gender === 'F') || availableVoices[0];
     const speaker2Voice = availableVoices.find(v => v.gender === 'M') || availableVoices[availableVoices.length - 1];

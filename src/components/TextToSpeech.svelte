@@ -3,8 +3,8 @@
   import { get } from 'svelte/store';
   import { settingsStore, i18n } from '@/stores';
   import { loadRuntimeConfig, voiceCloningAvailable } from '@/utils/runtimeConfig';
-  import { generatePodcastAudio, fetchAvailableVoices, generateVoicePreviewAudio, deleteVoice, detectVoiceCloningSupport } from '@/services/ttsServices';
-  import { VOICES_BY_LANGUAGE } from '@/constants';
+  import { generatePodcastAudio, fetchAvailableVoices, generateVoicePreviewAudio, deleteVoice, detectVoiceCloningSupport, detectTtsCapabilities, type TtsCapabilities } from '@/services/ttsServices';
+  import { VOICES_BY_LANGUAGE, LANGUAGES, getLanguageName } from '@/constants';
   import { createWavBlob, resampleLinear, floatToInt16, playBase64Audio, PeakAccumulator } from '@/utils/audio';
   import Spinner from '@/components/Spinner.svelte';
   import Waveform from '@/components/Waveform.svelte';
@@ -45,16 +45,50 @@
   // active backend is runtime config, so hide the UI instead of letting the
   // user hit a 501.
   let cloneEnabled = voiceCloningAvailable(null);
+  let ttsCaps: TtsCapabilities | null = null;
+
+  function buildSupportedLanguages(caps: TtsCapabilities | null): { code: string; label: string }[] {
+    const localized = (code: string): string => {
+      if (code === 'de') return t('tts.langDe');
+      if (code === 'en') return t('tts.langEn');
+      if (code === 'fr') return t('tts.langFr');
+      if (code === 'it') return t('tts.langIt');
+      return getLanguageName(code);
+    };
+    const codes = caps && caps.languages.length > 0
+      ? caps.languages
+      : ['de', 'en', 'fr', 'it'];
+    return codes.map(code => ({ code, label: localized(code) }));
+  }
+
+  function formatEngineBadge(caps: TtsCapabilities): string {
+    const count = caps.languages.length;
+    if (caps.engine === 'omnivoice') {
+      const labelCount = caps.totalLanguages > count ? `${caps.totalLanguages}+ langs` : `${count} langs`;
+      return `OmniVoice · ${labelCount}`;
+    }
+    if (caps.engine === 'supertonic3') return `Supertonic 3 · ${count} langs`;
+    if (caps.engine === 'pocket-tts') return `PocketTTS · ${count} langs`;
+    return `${caps.engine} · ${count} langs`;
+  }
+
+  $: supportedLanguages = buildSupportedLanguages(ttsCaps);
+  $: if (supportedLanguages.length > 0 && !supportedLanguages.some(l => l.code === language)) {
+    language = supportedLanguages[0].code;
+  }
 
   // Precedence: runtime config.json > backend /health capability > build-time.
   onMount(async () => {
-    const cfg = await loadRuntimeConfig();
+    const [cfg, caps] = await Promise.all([
+      loadRuntimeConfig(),
+      detectTtsCapabilities(get(settingsStore)),
+    ]);
+    ttsCaps = caps;
     if (typeof cfg.ttsVoiceCloning === 'boolean') {
       cloneEnabled = cfg.ttsVoiceCloning;
-      return;
+    } else if (caps && typeof caps.voiceCloning === 'boolean') {
+      cloneEnabled = caps.voiceCloning;
     }
-    const capability = await detectVoiceCloningSupport(get(settingsStore));
-    if (capability !== null) cloneEnabled = capability;
   });
 
   $: languageVoices = (VOICES_BY_LANGUAGE[language] || VOICES_BY_LANGUAGE['en']).map(v => ({
@@ -329,12 +363,17 @@
 </script>
 
 <section class="bg-slate-800 rounded-lg shadow-lg p-6">
-  <h2 class="text-xl font-bold mb-2 text-slate-100">{$i18n.t('tts.title')}</h2>
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+    <h2 class="text-xl font-bold text-slate-100">{$i18n.t('tts.title')}</h2>
+    {#if ttsCaps}
+      <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-slate-700 text-slate-200 border border-slate-600">{formatEngineBadge(ttsCaps)}</span>
+    {/if}
+  </div>
   <p class="text-sm text-slate-400 mb-4">{$i18n.t('tts.subtitle')}</p>
   <textarea bind:value={text} rows="5" placeholder={$i18n.t('tts.placeholder')} class="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-slate-100"></textarea>
   <div class="grid grid-cols-2 gap-3 mt-3">
     <select bind:value={language} class="bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-slate-100">
-      <option value="de">{$i18n.t('tts.langDe')}</option><option value="en">{$i18n.t('tts.langEn')}</option><option value="fr">{$i18n.t('tts.langFr')}</option><option value="it">{$i18n.t('tts.langIt')}</option>
+      {#each supportedLanguages as item}<option value={item.code}>{item.label}</option>{/each}
     </select>
     <select bind:value={voice} class="bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-slate-100">
       {#each allVoices as item}<option value={item.id}>{item.label}</option>{/each}

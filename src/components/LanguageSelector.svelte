@@ -4,10 +4,12 @@
   import type { Language } from '@/types';
   import Icon from '@/components/Icons.svelte';
   
-  const LANGUAGES: { code: Language, name: string, icon: 'gb' | 'de' | 'es' | 'fr' | 'it' }[] = [
+  const LANGUAGES: { code: Language, name: string, icon: 'gb' | 'de' | 'es' | 'cn' | 'ru' | 'fr' | 'it' }[] = [
       { code: 'en', name: 'English', icon: 'gb' },
       { code: 'de', name: 'Deutsch', icon: 'de' },
       { code: 'es', name: 'Español', icon: 'es' },
+      { code: 'zh', name: '中文', icon: 'cn' },
+      { code: 'ru', name: 'Русский', icon: 'ru' },
       { code: 'fr', name: 'Français', icon: 'fr' },
       { code: 'it', name: 'Italiano', icon: 'it' },
   ];

@@ -58,10 +58,24 @@ settingsStore.update(settings => ({
 // in-memory API key and must never be written to the console (UI-05).
 
 // --- i18n Store ---
+function detectInitialLang(): Language {
+    if (typeof window !== 'undefined') {
+        try {
+            const saved = localStorage.getItem('netai-lang') as Language | null;
+            if (saved && translations[saved]) return saved;
+        } catch {
+            // private mode / SSR
+        }
+    }
+    if (typeof navigator !== 'undefined' && navigator.language) {
+        const nav = navigator.language.split('-')[0].toLowerCase() as Language;
+        if (translations[nav]) return nav;
+    }
+    return 'en';
+}
+
 const createI18nStore = () => {
-    const defaultLang: Language = (typeof navigator !== 'undefined' && translations[navigator.language.split('-')[0] as Language]) 
-        ? navigator.language.split('-')[0] as Language 
-        : 'en';
+    const defaultLang: Language = detectInitialLang();
 
     const { subscribe, set } = writable<{ lang: Language, t: (key: string, replacements?: Record<string, string>) => string }>({
         lang: defaultLang,
@@ -72,6 +86,13 @@ const createI18nStore = () => {
         if (!translations[lang]) {
             console.warn(`Language '${lang}' not found, defaulting to English.`);
             lang = 'en';
+        }
+        if (typeof window !== 'undefined') {
+            try {
+                localStorage.setItem('netai-lang', lang);
+            } catch {
+                // private mode
+            }
         }
         set({ lang, t: (key, replacements) => translate(lang, key, replacements) });
     }

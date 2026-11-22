@@ -16,16 +16,20 @@
         gb: `<g clip-path="url(#a-gb)"><path d="M0 0v30h60V0z" fill="#012169"/><path d="M0 0l60 30m0-30L0 30" stroke="#fff" stroke-width="6"/><path d="M0 0l60 30m0-30L0 30" clip-path="url(#b-gb)" stroke="#C8102E" stroke-width="4"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#C8102E" stroke-width="6"/></g><defs><clipPath id="b-gb"><path d="M30 15h30v15zv15h-30z"/></clipPath><clipPath id="a-gb"><path d="M0 0h60v30H0z"/></clipPath></defs>`,
         de: `<path d="M0 0h5v3H0z"/><path d="M0 1h5v2H0z" fill="#D00"/><path d="M0 2h5v1H0z" fill="#FFCE00"/>`,
         es: `<path d="M0 0h750v500H0z" fill="#c60b1e"/><path d="M0 125h750v250H0z" fill="#ffc400"/>`,
+        cn: `<rect width="30" height="20" fill="#DE2910"/><g fill="#FFDE00"><polygon points="5,2 5.9,4.7 8.8,4.7 6.4,6.4 7.3,9.1 5,7.4 2.7,9.1 3.6,6.4 1.2,4.7 4.1,4.7"/><circle cx="10" cy="2" r="0.9"/><circle cx="12" cy="4" r="0.9"/><circle cx="12" cy="7" r="0.9"/><circle cx="10" cy="9" r="0.9"/></g>`,
+        ru: `<rect width="9" height="6" fill="#fff"/><rect y="2" width="9" height="2" fill="#0039a6"/><rect y="4" width="9" height="2" fill="#d52b1e"/>`,
         fr: `<path d="M0 0h900v600H0z" fill="#fff"/><path d="M0 0h300v600H0z" fill="#002654"/><path d="M600 0h300v600H600z" fill="#ED2939"/>`,
         it: `<path d="M0 0h1500v1000H0z" fill="#fff"/><path d="M0 0h500v1000H0z" fill="#009246"/><path d="M1000 0h500v1000h-500z" fill="#CE2B37"/>`
 	};
 
-    const iconContent = icons[name];
+    $: iconContent = icons[name];
     
     const viewBoxes: Record<string, string> = {
         gb: "0 0 60 30",
         de: "0 0 5 3",
         es: "0 0 750 500",
+        cn: "0 0 30 20",
+        ru: "0 0 9 6",
         fr: "0 0 900 600",
         it: "0 0 1500 1000"
     }

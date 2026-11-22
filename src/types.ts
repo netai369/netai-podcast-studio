@@ -6,7 +6,7 @@ export interface Document {
 }
 
 // Language and Internationalization
-export type Language = 'en' | 'de' | 'es' | 'fr' | 'it' | 'nl' | 'sv' | 'ja' | 'uk' | 'pl' | 'sl' | 'hr' | 'hu' | 'sk' | 'cs' | 'ro' | 'el' | 'tr';
+export type Language = 'en' | 'de' | 'es' | 'zh' | 'ru' | 'fr' | 'it' | 'nl' | 'sv' | 'ja' | 'uk' | 'pl' | 'sl' | 'hr' | 'hu' | 'sk' | 'cs' | 'ro' | 'el' | 'tr' | 'pt' | 'ko' | 'hi' | 'da' | 'fi';
 
 export type LogLevel = 'ERROR' | 'INFO' | 'DEBUG';
 

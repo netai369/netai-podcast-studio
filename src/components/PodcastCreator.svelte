@@ -3,7 +3,7 @@
   import { writable, get } from 'svelte/store';
   import type { Document, Podcast, PodcastStyle, SpeakerConfig, PodcastNarrationStyle, Language } from '@/types';
   import { settingsStore, i18n } from '@/stores';
-  import { generatePodcastScriptStream, generatePodcastMetadata, generatePodcastAudio, generateVoicePreviewAudio, fetchAvailableVoices } from '@/services/api';
+  import { generatePodcastScriptStream, generatePodcastMetadata, generatePodcastAudio, generateVoicePreviewAudio, fetchAvailableVoices, detectTtsCapabilities, type TtsCapabilities } from '@/services/api';
   import { PODCAST_DURATIONS, PODCAST_STYLES, PODCAST_NARRATION_STYLES, LANGUAGES, VOICES_BY_LANGUAGE, getInitialSpeakers, getLanguageName, DEFAULT_NAMES_BY_LANGUAGE } from '@/constants';
   import { playBase64Audio } from '@/utils/audio';
 
@@ -36,6 +36,37 @@
   let loadingVoices = false;
   let isEditingExistingPodcast = false;
   let currentPodcastId: string | null = null;
+  let ttsCaps: TtsCapabilities | null = null;
+
+  function buildCreatorLanguages(caps: TtsCapabilities | null): { code: Language; name: string }[] {
+    if (!caps || caps.multilingual || caps.languages.length === 0) {
+      const known = new Set<string>(LANGUAGES.map(l => l.code));
+      const extras = (caps?.languages || [])
+        .filter(code => !known.has(code))
+        .map(code => ({ code: code as Language, name: getLanguageName(code) }));
+      return [...LANGUAGES, ...extras];
+    }
+    const allowed = new Set<string>(caps.languages);
+    const filtered = LANGUAGES.filter(l => allowed.has(l.code));
+    const known = new Set<string>(filtered.map(l => l.code));
+    const extras = caps.languages
+      .filter(code => !known.has(code))
+      .map(code => ({ code: code as Language, name: getLanguageName(code) }));
+    return [...filtered, ...extras];
+  }
+
+  function formatCreatorEngineBadge(caps: TtsCapabilities): string {
+    const count = caps.languages.length;
+    if (caps.engine === 'omnivoice') {
+      const labelCount = caps.totalLanguages > count ? `${caps.totalLanguages}+ langs` : `${count} langs`;
+      return `OmniVoice · ${labelCount}`;
+    }
+    if (caps.engine === 'supertonic3') return `Supertonic 3 · ${count} langs`;
+    if (caps.engine === 'pocket-tts') return `PocketTTS · ${count} langs`;
+    return `${caps.engine} · ${count} langs`;
+  }
+
+  $: supportedLanguages = buildCreatorLanguages(ttsCaps);
 
   // Helper function for persistent storage
   function createPersistentStore<T>(key: string, startValue: T) {
@@ -63,6 +94,7 @@
   // Load last settings on mount
   onMount(async () => {
     console.log('DEBUG: Component mounted, loading settings...');
+    ttsCaps = await detectTtsCapabilities(get(settingsStore));
     
     // Load available voices first
     console.log('DEBUG: Calling loadAvailableVoices from onMount...');
@@ -79,6 +111,13 @@
         style = settings.style;
         narrationStyle = settings.narrationStyle;
         language = settings.language;
+        if (ttsCaps && !ttsCaps.multilingual && ttsCaps.languages.length > 0 && !ttsCaps.languages.includes(language)) {
+          language = ttsCaps.languages[0] as Language;
+        }
+        speakers = getInitialSpeakersFromAvailableVoices(language);
+        loadAvailableVoices();
+      } else if (ttsCaps && !ttsCaps.multilingual && ttsCaps.languages.length > 0 && !ttsCaps.languages.includes(language)) {
+        language = ttsCaps.languages[0] as Language;
         speakers = getInitialSpeakersFromAvailableVoices(language);
         loadAvailableVoices();
       }
@@ -150,7 +189,7 @@
       ...voice,
       id: voice.name
     }));
-    const names = DEFAULT_NAMES_BY_LANGUAGE[language];
+    const names = DEFAULT_NAMES_BY_LANGUAGE[language] || DEFAULT_NAMES_BY_LANGUAGE['en'];
 
     const speaker1Voice = voices.find(v => v.gender === 'F') || voices[0];
     const speaker2Voice = voices.find(v => v.gender === 'M') || voices[voices.length - 1];
@@ -347,9 +386,14 @@
       
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label for="language" class="block text-sm font-medium text-slate-300">{$i18n.t('creator.languageLabel')}</label>
+          <div class="flex items-center justify-between gap-2">
+            <label for="language" class="block text-sm font-medium text-slate-300">{$i18n.t('creator.languageLabel')}</label>
+            {#if ttsCaps}
+              <span class="px-2 py-0.5 text-[11px] font-medium rounded-full bg-slate-700 text-slate-300 border border-slate-600">{formatCreatorEngineBadge(ttsCaps)}</span>
+            {/if}
+          </div>
           <select id="language" bind:value={language} on:change={handleLanguageChange} class="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md py-2 px-3">
-            {#each LANGUAGES as lang}
+            {#each supportedLanguages as lang}
               <option value={lang.code}>{lang.name}</option>
             {/each}
           </select>
