@@ -76,6 +76,20 @@ export const PODCAST_NARRATION_STYLES = [
     { id: 'explainer', title: 'Explainer/Upbeat', description: 'An energized, enthusiastic, and often slightly faster pace.' },
 ];
 
+// Direct (uncloned) voices for low-latency synthesis without reference-WAV conditioning
+export const DIRECT_VOICES: { name: string; gender: 'M' | 'F'; label: string }[] = [
+    { name: 'F1', gender: 'F', label: 'F1 — Direct (Young · Moderate) ♀' },
+    { name: 'F2', gender: 'F', label: 'F2 — Direct (Warm · Professional) ♀' },
+    { name: 'F3', gender: 'F', label: 'F3 — Direct (Bright · Expressive) ♀' },
+    { name: 'F4', gender: 'F', label: 'F4 — Direct (Calm · Low) ♀' },
+    { name: 'F5', gender: 'F', label: 'F5 — Direct (Soft · Low) ♀' },
+    { name: 'M1', gender: 'M', label: 'M1 — Direct (Clear · Moderate) ♂' },
+    { name: 'M2', gender: 'M', label: 'M2 — Direct (Narrative · Moderate) ♂' },
+    { name: 'M3', gender: 'M', label: 'M3 — Direct (Deep · Authoritative) ♂' },
+    { name: 'M4', gender: 'M', label: 'M4 — Direct (Young · Deep) ♂' },
+    { name: 'M5', gender: 'M', label: 'M5 — Direct (Dynamic · High) ♂' },
+];
+
 // Standard OpenAI voice aliases mapped by backend voice-map.env to bundle-specific native voices
 const VOICES_BY_LANGUAGE_FALLBACK: { name: string; gender: 'M' | 'F'; label: string }[] = [
     { name: 'alloy', gender: 'F', label: 'Alloy (Balanced) ♀' },
@@ -84,6 +98,7 @@ const VOICES_BY_LANGUAGE_FALLBACK: { name: string; gender: 'M' | 'F'; label: str
     { name: 'echo', gender: 'M', label: 'Echo (Deep) ♂' },
     { name: 'fable', gender: 'M', label: 'Fable (Expressive) ♂' },
     { name: 'onyx', gender: 'M', label: 'Onyx (Authoritative) ♂' },
+    ...DIRECT_VOICES,
 ];
 
 export const VOICES_BY_LANGUAGE: Record<string, { name: string; gender: 'M' | 'F'; label: string }[]> = {
@@ -99,6 +114,7 @@ export const VOICES_BY_LANGUAGE: Record<string, { name: string; gender: 'M' | 'F
         { name: 'cedar', gender: 'M', label: 'Cedar (Thorsten) ♂' },
         { name: 'sage', gender: 'M', label: 'Sage (Christian) ♂' },
         { name: 'verse', gender: 'M', label: 'Verse (Hokuspokus) ♂' },
+        ...DIRECT_VOICES,
     ],
     en: [
         { name: 'alloy', gender: 'F', label: 'Alloy (Alba) ♀' },
@@ -108,6 +124,7 @@ export const VOICES_BY_LANGUAGE: Record<string, { name: string; gender: 'M' | 'F
         { name: 'ballad', gender: 'F', label: 'Ballad (Sarah) ♀' },
         { name: 'echo', gender: 'M', label: 'Echo (Frank) ♂' },
         { name: 'fable', gender: 'M', label: 'Fable (Jean) ♂' },
+        ...DIRECT_VOICES,
     ],
     fr: [
         { name: 'alloy', gender: 'F', label: 'Alloy (Estelle) ♀' },
@@ -115,12 +132,14 @@ export const VOICES_BY_LANGUAGE: Record<string, { name: string; gender: 'M' | 'F
         { name: 'shimmer', gender: 'F', label: 'Shimmer (Beatris) ♀' },
         { name: 'echo', gender: 'M', label: 'Echo (Orus) ♂' },
         { name: 'fable', gender: 'M', label: 'Fable (Achird) ♂' },
+        ...DIRECT_VOICES,
     ],
     it: [
         { name: 'alloy', gender: 'F', label: 'Alloy (Despina) ♀' },
         { name: 'nova', gender: 'F', label: 'Nova (Erinome) ♀' },
         { name: 'echo', gender: 'M', label: 'Echo (Giovanni) ♂' },
         { name: 'fable', gender: 'M', label: 'Fable (Gennaro) ♂' },
+        ...DIRECT_VOICES,
     ],
     es: VOICES_BY_LANGUAGE_FALLBACK,
     nl: VOICES_BY_LANGUAGE_FALLBACK,
